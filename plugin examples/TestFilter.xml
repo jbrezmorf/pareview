@@ -1,0 +1,128 @@
+<ServerManagerConfiguration>
+  <ProxyGroup name="filters">
+    <SourceProxy name="TestFilter" class="vtkPythonProgrammableFilter" label="Test Filter">
+
+      <Documentation
+        long_help="Help for the Test Filter"
+        short_help="Help for the Test Filter">
+      </Documentation>
+
+
+      <InputProperty
+        name="Input"
+        command="SetInputConnection">
+          <ProxyGroupDomain name="groups">
+            <Group name="sources"/>
+            <Group name="filters"/>
+          </ProxyGroupDomain>
+
+          <DataTypeDomain name="input_type">
+            <DataType value="vtkPolyData"/>
+          </DataTypeDomain>
+      </InputProperty>
+
+
+      <IntVectorProperty
+        name="test_bool"
+        label="test bool"
+        initial_string="test_bool"
+        command="SetParameter"
+        animateable="1"
+        default_values="1"
+        number_of_elements="1">
+        <BooleanDomain name="bool" />
+        <Documentation></Documentation>
+      </IntVectorProperty>
+
+
+      <DoubleVectorProperty
+        name="test_double"
+        label="test double"
+        initial_string="test_double"
+        command="SetParameter"
+        animateable="1"
+        default_values="1.23"
+        number_of_elements="1">
+        <Documentation></Documentation>
+      </DoubleVectorProperty>
+
+
+      <DoubleVectorProperty
+        name="test_double_vector"
+        label="test double vector"
+        initial_string="test_double_vector"
+        command="SetParameter"
+        animateable="1"
+        default_values="1.1 2.2 3.3"
+        number_of_elements="3">
+        <Documentation></Documentation>
+      </DoubleVectorProperty>
+
+
+      <IntVectorProperty
+        name="test_int"
+        label="test int"
+        initial_string="test_int"
+        command="SetParameter"
+        animateable="1"
+        default_values="123"
+        number_of_elements="1">
+        <Documentation></Documentation>
+      </IntVectorProperty>
+
+
+      <IntVectorProperty
+        name="test_int_vector"
+        label="test int vector"
+        initial_string="test_int_vector"
+        command="SetParameter"
+        animateable="1"
+        default_values="1 2 3"
+        number_of_elements="3">
+        <Documentation></Documentation>
+      </IntVectorProperty>
+
+
+      <StringVectorProperty
+        name="test_string"
+        label="test string"
+        initial_string="test_string"
+        command="SetParameter"
+        animateable="1"
+        default_values="string value"
+        number_of_elements="1">
+        <Documentation></Documentation>
+      </StringVectorProperty>
+
+
+
+
+      <!-- Output data type: "vtkPolyData" -->
+      <IntVectorProperty command="SetOutputDataSetType"
+                         default_values="0"
+                         name="OutputDataSetType"
+                         number_of_elements="1"
+                         panel_visibility="never">
+        <Documentation>The value of this property determines the dataset type
+        for the output of the programmable filter.</Documentation>
+      </IntVectorProperty>
+
+
+      <StringVectorProperty
+        name="Script"
+        command="SetScript"
+        number_of_elements="1"
+        default_values="&#xA;assert test_bool == True&#xA;assert test_int == 123&#xA;assert test_int_vector == [1, 2, 3]&#xA;assert test_double == 1.23&#xA;assert test_double_vector == [1.1, 2.2, 3.3]&#xA;assert test_string == &quot;string value&quot;&#xA;"
+        panel_visibility="advanced">
+        <Hints>
+         <Widget type="multi_line"/>
+       </Hints>
+      <Documentation>This property contains the text of a python program that
+      the programmable source runs.</Documentation>
+      </StringVectorProperty>
+
+
+
+    </SourceProxy>
+ </ProxyGroup>
+</ServerManagerConfiguration>

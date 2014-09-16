@@ -1,0 +1,67 @@
+<ServerManagerConfiguration>
+  <ProxyGroup name="sources">
+    <SourceProxy name="EclipseReader" class="vtkPythonProgrammableFilter" label="Eclipse EGRID and UNRST reader">
+
+      <Documentation
+        long_help="Read mesh in EGRID format and time dependent data from UNRST output files."
+        short_help="Reader for EGRID and UNRST files.">
+      </Documentation>
+
+
+      <InputProperty
+        name="Input"
+        command="SetInputConnection">
+          <ProxyGroupDomain name="groups">
+            <Group name="sources"/>
+            <Group name="filters"/>
+          </ProxyGroupDomain>
+
+          <DataTypeDomain name="input_type">
+            <DataType value="vtkPolyData"/>
+          </DataTypeDomain>
+      </InputProperty>
+
+
+      <StringVectorProperty
+        name="FilenameBase"
+        label="test string"
+        initial_string=""
+        command="SetParameter"
+        animateable="1"
+        default_values=""
+        number_of_elements="1">
+        <Documentation>Common base name of both EGRID and UNRST files.</Documentation>
+      </StringVectorProperty>
+
+
+
+
+      <!-- Output data type: "vtkPolyData" -->
+      <IntVectorProperty command="SetOutputDataSetType"
+                         default_values="0"
+                         name="vtkMultiBlockDataSet"
+                         number_of_elements="1"
+                         panel_visibility="never">
+        <Documentation>The value of this property determines the dataset type
+        for the output of the programmable filter.</Documentation>
+      </IntVectorProperty>
+
+
+      <StringVectorProperty
+        name="Script"
+        command="SetScript"
+        number_of_elements="1"
+        default_values="&#xA;assert test_bool == True&#xA;assert test_int == 123&#xA;assert test_int_vector == [1, 2, 3]&#xA;assert test_double == 1.23&#xA;assert test_double_vector == [1.1, 2.2, 3.3]&#xA;assert test_string == &quot;string value&quot;&#xA;"
+        panel_visibility="advanced">
+        <Hints>
+         <Widget type="multi_line"/>
+       </Hints>
+      <Documentation>This property contains the text of a python program that
+      the programmable source runs.</Documentation>
+      </StringVectorProperty>
+
+
+
+    </SourceProxy>
+ </ProxyGroup>
+</ServerManagerConfiguration>
