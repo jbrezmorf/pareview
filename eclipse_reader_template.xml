@@ -1,0 +1,50 @@
+<ServerManagerConfiguration>
+  <ProxyGroup name="sources">
+    <SourceProxy name="EclipseReader" class="vtkPythonProgrammableFilter" label="Eclipse EGRID and UNRST reader">
+      <Documentation
+        long_help="Read mesh in EGRID format and time dependent data from UNRST output files."
+        short_help="Read mesh in EGRID format and time dependent data from UNRST output files.">
+      </Documentation>
+
+      <StringVectorProperty
+            name="FileName"
+            animateable="0"
+            command="SetProgressText"
+            number_of_elements="1"
+            panel_visibility="advanced">
+        <FileListDomain name="files"/>
+        <Documentation>
+          This property specifies the file name for the reader.
+        </Documentation>
+      </StringVectorProperty>
+      
+      <!-- Set output grid type: vtkUnstructuredGrid -->
+      <IntVectorProperty command="SetOutputDataSetType"
+                         default_values="4"
+                         name="OutputDataSetType"
+                         number_of_elements="1"
+                         panel_visibility="never">
+        <Documentation>The value of this property determines the dataset type
+        for the output of the programmable filter.</Documentation>
+      </IntVectorProperty>
+
+      <StringVectorProperty
+        name="Script"
+        command="SetScript"
+        number_of_elements="1"
+        default_values="__SCRIPT_PLACEHOLDER__"
+        panel_visibility="advanced">
+        <Hints>
+         <Widget type="multi_line"/>
+        </Hints>
+      <Documentation>This property contains the text of a python program that
+      the programmable source runs.</Documentation>
+      </StringVectorProperty>
+
+      <Hints>
+        <ReaderFactory extensions="egrid"
+                       file_description="Eclipse mesh File Format" />
+      </Hints>
+    </SourceProxy>
+  </ProxyGroup>
+</ServerManagerConfiguration>
