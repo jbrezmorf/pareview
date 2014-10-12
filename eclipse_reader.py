@@ -1,21 +1,11 @@
 import os
 import numpy as np
-
-'''
-
-'''
+from vtk.util import numpy_support
 
 
-Name = 'EclipseReader'
-Label = 'Eclipse EGRID and UNRST reader'
-Help = 'Read mesh in EGRID format and time dependent data from UNRST output files.'
 
-NumberOfInputs = 0
-OutputDataType = 'vtkPolyData'
+VTK_HEXAHEDRON=12
 
-Properties = dict(
-  FileNameBase = ''
-  )
 
 class EclipseIO :
 
@@ -24,15 +14,15 @@ class EclipseIO :
     Call with endian='<i4' for choosing little-endian.
     
     '''
-    def __init__(self, endian='>i4'):
+    def __init__(self, endian='>'):
         '''
         dtype specification for every header is stored under 
         its keyword in the egrid_header record.
         '''
         self.egrid_header={} 
-        i4=self.i4=endian
-        real=self.real='>f'
-               
+        i4=self.i4=endian+'i4'
+        real=self.real=endian+'f'
+              
         self.egrid_header['FILEHEAD']=np.dtype([ 
           ('version', i4),
           ('release_year',i4),
@@ -104,7 +94,7 @@ class EclipseIO :
                 return 1
             else:
                 data_str=data_str[len(data_str) - len(keyword):]
-           
+          
     '''
     Return dictionary with data from the header. Possible keys:
 
@@ -143,7 +133,7 @@ class EclipseIO :
     store it into (empty) output object given by 'pdo' parameter.
     Returns updated pdo object.
     '''
-    def read_egrid_mesh(self,pdo, filename):
+    def read_egrid_mesh(self, output, filename):
         self.grid_file=open(filename, 'rb')
         # skip one int
         self.grid_file.read(4)
@@ -154,12 +144,12 @@ class EclipseIO :
         
         gridhead=self.read_header("GRIDHEAD")
         (nx,ny,nz) = gridhead['dimensions']
-        nlines=6*(nx+1)*(ny+1)*gridhead['numres']
+        nlines=(nx+1)*(ny+1)*gridhead['numres']
 
         boxorig=self.read_header("BOXORIG ")       
-        lines=self.read_array("COORD   ", np.dtype(self.real), nlines)
+        lines=self.read_array("COORD   ", np.dtype(self.real), 6*nlines)
         reservoirs=self.read_array("COORDSYS", self.egrid_header['reservoir'], count=gridhead['numres'])
-        corners=self.read_array("ZCORN   ", np.dtype(self.real), count=8*nx*ny*nz)
+        z_corners=self.read_array("ZCORN   ", np.dtype(self.real), count=8*nx*ny*nz)
         activecells=self.read_array("ACTNUM  ", np.dtype(self.i4), count=nx*ny*nz) 
         # 0-inactive, 1-active, 2-active fracture, 3-active matrix and fracture 
         
@@ -168,87 +158,88 @@ class EclipseIO :
         self.read_header("ENDGRID ")
         
         assert(lines != None)
-        assert(corners != None)
+        assert(z_corners != None)
+        lines.shape=(nlines,6)
         
-        print "LINES\n",lines
-        print "CORNERS\n",corners
+        # Create corresponding VTK mesh in pdo object
+        #print "LINES\n",lines
+        #print "CORNERS\n",z_corners
         
         self.grid_file.close()
+        
+        output.corners=np.empty(3*8*nx*ny*nz, dtype=float)
+        output.cells=np.empty(9*nx*ny*nz, dtype=int)
+        
+        i_point=0
+        i_corner=0
+        i_cell=0
+        
+        # eclipse coordinate system:  
+        #           / y 
+        #  x  <---|/
+        #         |
+        #         v z
+        
+        
+        # local coordinates (x,y,z)
+        hexahedron_local_vtx=[(0,0,0),(1,0,0),(1,1,0),(0,1,0),(0,0,1),(1,0,1),(1,1,1),(0,1,1)]
+        for ix in xrange(nx) :
+            for iy in xrange(ny) :
+                for iz in xrange(nz) :
+                    # print "CELL = ", i_cell
+                    output.cells[i_cell]=8 # number of vertices
+                    i_cell+=1
+                    # set corners of one cell and cell indices to points
+                    
+                    # cell vertical lines are at (ix,ix+1) x ( iy, iy+1) in coords
+                    # cell z coords are at 
+                    
+                    for i_vtx in xrange(8):
+                        output.cells[i_cell]=i_point
+                        i_cell+=1
+                        i_point+=1
+                        
+                        loc_x,loc_y,loc_z=hexahedron_local_vtx[i_vtx]
+                        i_zcoord=2*ix+loc_x + 2*nx*(2*iy+loc_y)+ 2*nx*2*ny*(2*iz+loc_z)
+                        z_coord= z_corners[i_zcoord]
+                        line=lines[(ix+loc_x) + (nx+1)*(iy+loc_y)]
+                        top=(line[0], line[1])
+                        z_top=line[2]
+                        bot=(line[3], line[4])
+                        z_bot=line[5]
+                        t=(z_coord-z_bot)/(z_top-z_bot)
+                        (x_coord,y_coord)= top*t + bot*(1-t)
+                        output.corners[i_corner] = x_coord
+                        i_corner+=1
+                        output.corners[i_corner] = y_coord
+                        i_corner+=1
+                        output.corners[i_corner] = z_coord
+                        i_corner+=1
+                        
+                        # print "    vtx: ", i_vtx, x_coord, y_coord, z_coord
+        
+        output.corners.shape=(8*nx*ny*nz, 3)                  
+        output.points=vtk.vtkPoints()
+        output.points.SetData(numpy_support.numpy_to_vtk(output.corners)) # 8*nx*ny*nz (x,y,z)
+        output.SetPoints(output.points)
+        
+        output.cell_array = vtk.vtkCellArray()
+        output.cell_array.SetCells(nx*ny*nz, numpy_support.numpy_to_vtkIdTypeArray(output.cells)) # nx*ny*nz (n,8*i_point)
+        output.SetCells(VTK_HEXAHEDRON, output.cell_array) 
+        
 
 
-def RequestData():
+def main():
+    FileName=self.GetProgressText()
+    self.SetProgressText('')
 
-    #This script generates a helix double.
-    #This is intended as the script of a 'Programmable Source'
-    import math
+    # for debugging
+    if (FileName==""):
+      FileName='/home/jb/workspace/pareview/test.egrid'
 
-    #Get a vtk.PolyData object for the output
-    pdo = self.GetPolyDataOutput()
-    read_egrid_mesh(pdo,FileNameBase+'.EGRID')
-    
-    numPts = Number_of_points # Points along each Helix
-    length = float(Length) # Length of each Helix
-    rounds = float(Rounds) # Number of times around
-    phase_shift = math.pi/Phase_shift # Phase shift between Helixes
+    output = self.GetOutput()
+    io=EclipseIO()
+    io.read_egrid_mesh(output,FileName)
 
-
-    #This will store the points for the Helix
-    newPts = vtk.vtkPoints()
-    for i in range(0, numPts):
-       #Generate Points for first Helix
-       x = i*length/numPts
-       y = math.sin(i*rounds*2*math.pi/numPts)
-       z = math.cos(i*rounds*2*math.pi/numPts)
-       newPts.InsertPoint(i, x,y,z)
-
-       #Generate Points for second Helix. Add a phase offset to y and z.
-       y = math.sin(i*rounds*2*math.pi/numPts+phase_shift)
-       z = math.cos(i*rounds*2*math.pi/numPts+phase_shift)
-       #Offset Helix 2 pts by 'numPts' to keep separate from Helix 1 Pts
-       newPts.InsertPoint(i+numPts, x,y,z)
-
-    #Add the points to the vtkPolyData object
-    pdo.SetPoints(newPts)
-
-    #Make two vtkPolyLine objects to hold curve construction data
-    aPolyLine1 = vtk.vtkPolyLine()
-    aPolyLine2 = vtk.vtkPolyLine()
-
-    #Indicate the number of points along the line
-    aPolyLine1.GetPointIds().SetNumberOfIds(numPts)
-    aPolyLine2.GetPointIds().SetNumberOfIds(numPts)
-    for i in range(0,numPts):
-       #First Helix - use the first set of points
-       aPolyLine1.GetPointIds().SetId(i, i)
-       #Second Helix - use the second set of points
-       #(Offset the point reference by 'numPts').
-       aPolyLine2.GetPointIds().SetId(i,i+numPts)
-
-    #Allocate the number of 'cells' that will be added.
-    #Two 'cells' for the Helix curves, and one 'cell'
-    #for every 3rd point along the Helixes.
-    links = range(0,numPts,3)
-    pdo.Allocate(2+len(links), 1)
-
-    #Add the poly line 'cell' to the vtkPolyData object.
-    pdo.InsertNextCell(aPolyLine1.GetCellType(), aPolyLine1.GetPointIds())
-    pdo.InsertNextCell(aPolyLine2.GetCellType(), aPolyLine2.GetPointIds())
-
-    for i in links:
-       #Add a line connecting the two Helixes.
-       aLine = vtk.vtkLine()
-       aLine.GetPointIds().SetId(0, i)
-       aLine.GetPointIds().SetId(1, i+numPts)
-       pdo.InsertNextCell(aLine.GetCellType(), aLine.GetPointIds())
-
-
-
-
-
-
-
-
-
-if __name__ == "__main__":
-    import sys
-    fib(int(sys.argv[1]))
+if __name__ == '__main__':
+    main()  
