@@ -1,6 +1,6 @@
 <ServerManagerConfiguration>
   <ProxyGroup name="sources">
-    <SourceProxy name="EclipseReader" class="vtkPythonProgrammableFilter" label="Eclipse EGRID and UNRST reader">
+    <SourceProxy name="EclipseReader_1" class="vtkPythonProgrammableFilter" label="Eclipse EGRID and UNRST reader">
       <Documentation
         long_help="Read mesh in EGRID format and time dependent data from UNRST output files."
         short_help="Read mesh in EGRID format and time dependent data from UNRST output files.">
