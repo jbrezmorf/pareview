@@ -10,3 +10,19 @@ Files:
   makefile
   test.egrid - test mesh
   test_eclipse_reader.py - unit tests
+
+
+Eclipse file extensions:
+DBG - debug output
+EGRID - egrid mesh file
+INIT - initial file
+INSPEC
+MSG - message output
+PRT - TXT, main printer output
+RFT - vector file (graphing data)
+RSM - TXT, Run Summary
+RSSPEC - unformatted index for restart files
+SMSPEC - summary specification file
+         (root file name, number of vector data - wells, positions of wells (cell or region number))
+UNRST - unified restart file
+UNSMRY - unified summary file (vector data at ministeps)

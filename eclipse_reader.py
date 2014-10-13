@@ -234,14 +234,13 @@
  
  
  def main():
+     # prevent recursion 
      if (not EclipseIO.running_reader):
          EclipseIO.running_reader=True
          
+         EclipseIO.FileName=FileName
          if (EclipseIO.FileName==None):
-             EclipseIO.FileName=self.GetProgressText()
-             self.SetProgressText(None)
-             if (EclipseIO.FileName==None):
-                 raise IOError("No input filename.")
+             raise IOError("No input filename.")
  
          #print "f:", FileName
          # for debugging
@@ -261,7 +260,8 @@
          #view=servermanager.CreateRenderView()
          #view.ResetCamera() 
          import paraview.simple 
-         paraview.simple.ResetCamera() 
+         paraview.simple.ResetCamera()
+         EclipseIO.running_reader=False    
  
  if __name__ == '__main__':
      main()  

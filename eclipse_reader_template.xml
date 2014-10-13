@@ -8,14 +8,17 @@
 
       <StringVectorProperty
             name="FileName"
-            animateable="0"
-            command="SetProgressText"
+            label="FileName"
+            initial_string="FileName"
+            animateable="1"
+            command="SetParameter"
+            default_values=""
             number_of_elements="1"
             panel_visibility="advanced">
-        <FileListDomain name="files"/>
-        <Documentation>
-          This property specifies the file name for the reader.
-        </Documentation>
+            <FileListDomain name="files"/>
+            <Documentation>
+                This property specifies the file name for the reader.
+            </Documentation>
       </StringVectorProperty>
       
       <!-- Set output grid type: vtkUnstructuredGrid -->
