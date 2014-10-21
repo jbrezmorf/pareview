@@ -131,7 +131,63 @@ class EclipseIO :
           (14, 'penetration_direction'), # 1=x, 2=y, 3=z, 4=fractured in x, 5=fractured in y
           (15, 'segment') # segment containing connection, 0- for multi segment wells
           ]
-          
+        
+        # Every field is tuple (in_label, out_label, unit)
+        solution_fields=[
+          ("PRESSURE", "Pressure",""),
+          ("SWAT",      "WaterSat",""),
+          ("SGAS",      "GasSat",""),
+          ("SOIL",      "OilSat",""),
+          ("RS",        "GasOilRatio",""),
+          ("RV",        "OilGasRatio",""),
+          ("OWC",       "OilWaterContact",""),
+          ("OGC",       "OilGasContact",""),
+          ("GWC",       "GasWaterContact",""),
+          ("OILAPI",    "OilAPI",""),
+          ("FIPOIL",    "OilFIP",""),
+          ("FIPGAS",    "GasFIP",""),
+          ("FIPWAT",    "WaterFIP",""),
+          ("OIL-POTN",  "OilPotential",""),
+          ("GAS-POTN",  "GasPotential",""),
+          ("WAT-POTN",  "WaterPotential",""),
+          ("POLYMER",   "PolymerConc",""),
+          ("PADS",      "PolymerAdsorbedConc",""),
+          ("XMF",       "LiquidMoleFrac",""),
+          ("YMF",       "VaporMoleFrac",""),
+          ("ZMF",       "TotalMoleFrac",""),
+          ("SSOL",      "SolventSat",""),
+          ("PBUB",      "BubblePressure",""),
+          ("PDEW",      "DewPressure",""),
+          ("SURFACT",   "SurfaceInteraction",""),
+          ("SURFADS",   "AdsorbedSurfactant",""),
+          ("SURFMAX",   "MaxSurfactantConc",""),
+          ("SURFCNM",   "SurfactantCapilaryNumber","")
+          ("GGI",       "GI_InjectedGasRatio","")
+          ("WAT-PRES",  "WaterPressure",""),
+          ("WAT_PRES",  "WaterPressure",""),
+          ("GAS-PRES",  "GasPressure",""),
+          ("GAS_PRES",  "GasPressure",""),
+          ("OIL-VISC",  "OilViscosity",""),
+          ("OIL_VISC",  "OilViscosity",""),
+          ("VOIL",      "OilViscosity",""),
+          ("WAT-VISC",  "WaterViscosity",""),
+          ("WAT_VISC",  "WaterViscosity",""),
+          ("VWAT",      "WaterViscosity",""),
+          ("GAS-VISC",  "GasViscosity",""),
+          ("GAS_VISC",  "GasViscosity",""),
+          ("VGAS",      "GasViscosity",""),
+          ("OIL-DEN",   "OilDensity",""),
+          ("OIL_DEN",   "OilDensity",""),
+          ("WAT-DEN",   "WaterDensity",""),
+          ("WAT_DEN",   "WaterDensity",""),
+          ("GAS-DEN",   "GasDensity",""),
+          ("GAS_DEN",   "GasDensity",""),
+          ("DRAINAGE",  "DrainageRegionNumber","")
+          ]
+        self.solution_fields={}
+        for item in solution_fields:
+            (key,label,unit)=item
+            self.solution_fields[key]=(label,unit)
     '''
     Search given 'keyword' in the given binary file 'f'.
     Seeks file 'f' to the first byte of  the keyword. 
@@ -536,6 +592,7 @@ class EclipseIO :
             data1=f.read(24) # 'STARTSOL',0x0,'MESS',0x10,0x10
             
             key=""
+            fields=[]
             while (1):
                 (key, array)=self.read_array(f)
                 #print key
@@ -543,7 +600,8 @@ class EclipseIO :
                 if (key == 'ENDSOL  '):
                     f.seek(-4,os.SEEK_CUR)
                     break
-                one_step[key]=array
+                fields.append( (key, array) )
+            one_step.fields=fields    
                 
             '''    
             ('PRESSURE', self.types['REAL'])
@@ -564,10 +622,29 @@ class EclipseIO :
     and data in a numpy array. Assumes a grid 
     '''
     def make_data_set(self, name, np_array, output):
-        new_array=numpy_support.numpy_to_vtk(np_array)
+        in_dtype=np_array.dtype()
+        if issubtype(in_dtype, np.number):
+            if np.issubtype(, np.integer):
+                new_array=numpy_support.numpy_to_vtkIdTypeArray(np_array)
+            else:    
+                new_array=numpy_support.numpy_to_vtk(np_array)
+        else:
+            print "Numpy array of non-number dtype: ", in_dtype
+            raise SystemExit
+          
         new_array.SetName(name)
         output.GetPointData().AddArray(new_array)     
-
+    '''
+    Make datasets from all fields on input.
+    '''
+    def make_all_data_sets(self, one_step, output):
+        for field in one_step.fields:
+            (key, array)=field
+            if self.solution_fields.has_key(key):
+                name=self.solution_fields[key][0]
+            else:
+                name=key  
+            self.make_data_set(name, array, output)
   
 
 #@no_recursion
