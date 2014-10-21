@@ -1,5 +1,5 @@
 
- 
+import paraview.simple 
 import os
 import numpy as np
 from vtk.util import numpy_support
@@ -7,6 +7,7 @@ from vtk.util import numpy_support
 
 
 VTK_HEXAHEDRON=12
+
 
 '''
 Class for reading Eclipse files and producing Paraview datasets.
@@ -16,11 +17,6 @@ Attributes:
       auxiliary data directly here
 '''
 class EclipseIO :
-    '''
-    Flag to prevent recursion
-    '''
-    running_reader=False  
-
 
     '''
     Set definitions of format headers with proper endian (default is big-endian).
@@ -310,7 +306,7 @@ class EclipseIO :
     store it into (empty) output object given by 'pdo' parameter.
     Returns updated pdo object.
     '''
-    def read_egrid_mesh(self, filename):
+    def read_egrid(self, filename):
         f=open(filename, 'rb')
         # skip one int
         f.read(4)
@@ -351,7 +347,81 @@ class EclipseIO :
         #print "CORNERS\n",z_corners
         
         f.close()
-        #self.out.grid=grid
+        self.out.grid=grid
+        
+
+
+    '''
+    Create corresponding VTK mesh in self.output object
+    '''
+    def create_grid(self):
+        grid=self.out.grid
+        (nx,ny,nz)=grid['dimensions']
+        lines=grid['lines']
+        z_corners=grid['z_corners']
+        
+        self.out.corners=np.empty(3*8*nx*ny*nz, dtype=float)
+        self.out.cells=np.empty(9*nx*ny*nz, dtype=int)
+        
+        i_point=0
+        i_corner=0
+        i_cell=0
+        
+        # eclipse coordinate system:  
+        #           / 
+        #  x  <---|/
+        #         |
+        #         v z
+        
+        
+        # local coordinates (x,y,z)
+        hexahedron_local_vtx=[(0,0,0),(1,0,0),(1,1,0),(0,1,0),(0,0,1),(1,0,1),(1,1,1),(0,1,1)]
+        for ix in xrange(nx) :
+            for iy in xrange(ny) :
+                for iz in xrange(nz) :
+                    # print "CELL = ", i_cell
+                    self.out.cells[i_cell]=8 # number of vertices
+                    i_cell+=1
+                    # set corners of one cell and cell indices to points
+                    
+                    # cell vertical lines are at (ix,ix+1) x ( iy, iy+1) in coords
+                    # cell z coords are at 
+                    
+                    for i_vtx in xrange(8):
+                        self.out.cells[i_cell]=i_point
+                        i_cell+=1
+                        i_point+=1
+                        
+                        loc_x,loc_y,loc_z=hexahedron_local_vtx[i_vtx]
+                        i_zcoord=2*ix+loc_x + 2*nx*(2*iy+loc_y)+ 2*nx*2*ny*(2*iz+loc_z)
+                        z_coord= z_corners[i_zcoord]
+                        line=lines[(ix+loc_x) + (nx+1)*(iy+loc_y)]
+                        top=(line[0], line[1])
+                        z_top=line[2]
+                        bot=(line[3], line[4])
+                        z_bot=line[5]
+                        t=(z_coord-z_bot)/(z_top-z_bot)
+                        (x_coord,y_coord)= top*t + bot*(1-t)
+                        self.out.corners[i_corner] = x_coord
+                        i_corner+=1
+                        self.out.corners[i_corner] = y_coord
+                        i_corner+=1
+                        self.out.corners[i_corner] = z_coord
+                        i_corner+=1
+                        
+                        # print "    vtx: ", i_vtx, x_coord, y_coord, z_coord
+        
+        self.out.corners.shape=(8*nx*ny*nz, 3)                  
+        self.out.points=vtk.vtkPoints()
+        self.out.points.SetData(numpy_support.numpy_to_vtk(self.out.corners)) # 8*nx*ny*nz (x,y,z)
+        self.out.SetPoints(self.out.points)
+        
+        self.out.cell_array = vtk.vtkCellArray()
+        self.out.cell_array.SetCells(nx*ny*nz, numpy_support.numpy_to_vtkIdTypeArray(self.out.cells)) # nx*ny*nz (n,8*i_point)
+        self.out.SetCells(VTK_HEXAHEDRON, self.out.cell_array) 
+        
+        
+        
     '''
     Read a restart file as an array of times
     self.restart[ step1, step2, ...]
@@ -360,7 +430,7 @@ class EclipseIO :
         f=open(filename, 'rb')
         # skip one int
         f.read(4)
-        #self.out.restart=[]
+        self.out.restart=[]
         
         while (1):
             one_step={}
@@ -371,7 +441,7 @@ class EclipseIO :
             one_step['head'].update(self.read_dict(f,'LOGIHEAD'))
             #print one_step['head']
             data=self.read_array(f,'DOUBHEAD') # !! much more complex then described, skip
-            print data
+            #print data
             #one_step['head'].update()
             
             n_groups=one_step['head']['n_max_groups']
@@ -461,8 +531,8 @@ class EclipseIO :
             key=""
             while (1):
                 (key, array)=self.read_array(f)
-                print key
-                print array
+                #print key
+                #print array
                 if (key == 'ENDSOL  '):
                     f.seek(-4,os.SEEK_CUR)
                     break
@@ -479,113 +549,43 @@ class EclipseIO :
             if (self.skip_to_keyword(f,'SEGNUM  ') == -1):
                 break 
         # end one step loop
-        #self.out.restart.append(one_step)
+        f.close()
+        self.out.restart.append(one_step)
         
-    '''
-    Create corresponding VTK mesh in self.output object
-    '''
-    def create_grid(self):
-        grid=self.out.grid
-        (nx,ny,nz)=grid['dimensions']
-        lines=grid['lines']
-        z_coord=grid['zcoord']
-        
-        self.out.corners=np.empty(3*8*nx*ny*nz, dtype=float)
-        self.out.cells=np.empty(9*nx*ny*nz, dtype=int)
-        
-        i_point=0
-        i_corner=0
-        i_cell=0
-        
-        # eclipse coordinate system:  
-        #           / 
-        #  x  <---|/
-        #         |
-        #         v z
-        
-        
-        # local coordinates (x,y,z)
-        hexahedron_local_vtx=[(0,0,0),(1,0,0),(1,1,0),(0,1,0),(0,0,1),(1,0,1),(1,1,1),(0,1,1)]
-        for ix in xrange(nx) :
-            for iy in xrange(ny) :
-                for iz in xrange(nz) :
-                    # print "CELL = ", i_cell
-                    self.out.cells[i_cell]=8 # number of vertices
-                    i_cell+=1
-                    # set corners of one cell and cell indices to points
-                    
-                    # cell vertical lines are at (ix,ix+1) x ( iy, iy+1) in coords
-                    # cell z coords are at 
-                    
-                    for i_vtx in xrange(8):
-                        self.out.cells[i_cell]=i_point
-                        i_cell+=1
-                        i_point+=1
-                        
-                        loc_x,loc_y,loc_z=hexahedron_local_vtx[i_vtx]
-                        i_zcoord=2*ix+loc_x + 2*nx*(2*iy+loc_y)+ 2*nx*2*ny*(2*iz+loc_z)
-                        z_coord= z_corners[i_zcoord]
-                        line=lines[(ix+loc_x) + (nx+1)*(iy+loc_y)]
-                        top=(line[0], line[1])
-                        z_top=line[2]
-                        bot=(line[3], line[4])
-                        z_bot=line[5]
-                        t=(z_coord-z_bot)/(z_top-z_bot)
-                        (x_coord,y_coord)= top*t + bot*(1-t)
-                        self.out.corners[i_corner] = x_coord
-                        i_corner+=1
-                        self.out.corners[i_corner] = y_coord
-                        i_corner+=1
-                        self.out.corners[i_corner] = z_coord
-                        i_corner+=1
-                        
-                        # print "    vtx: ", i_vtx, x_coord, y_coord, z_coord
-        
-        self.out.corners.shape=(8*nx*ny*nz, 3)                  
-        self.out.points=vtk.vtkPoints()
-        self.out.points.SetData(numpy_support.numpy_to_vtk(self.out.corners)) # 8*nx*ny*nz (x,y,z)
-        self.out.SetPoints(self.out.points)
-        
-        self.out.cell_array = vtk.vtkCellArray()
-        self.out.cell_array.SetCells(nx*ny*nz, numpy_support.numpy_to_vtkIdTypeArray(self.out.cells)) # nx*ny*nz (n,8*i_point)
-        self.out.SetCells(VTK_HEXAHEDRON, self.out.cell_array) 
         
     
 
   
 
-
+#@no_recursion
 def main():
-    FileName='test'
-    # prevent recursion 
-    if (not EclipseIO.running_reader):
-        EclipseIO.running_reader=True
-        
-        EclipseIO.FileName=FileName
-        if (EclipseIO.FileName==None):
-            raise IOError("No input filename.")
+   
+    if not hasattr(self,'Running'):
+        self.Running=False
 
-        #print "f:", FileName
-        # for debugging
-        #if (FileName==None or FileName==""):
-        #    FileName='/home/jb/workspace/pareview/test.egrid'
-        #print "f:", FileName
+    if not self.Running:
+        self.Running=True
+        try:
+            FileName='test'
+                
+            EclipseIO.FileName=FileName
+            if (EclipseIO.FileName==None):
+                raise IOError("No input filename.")
 
-        #output = self.GetOutput()
-        output=None
-        io=EclipseIO(output)
-        io.read_egrid_mesh(FileName+".egrid")
-        io.read_restart(FileName+".unrst")
-        #from paraview import servermanager
-        #help(servermanager)
-        #help(servermanager.GetRenderView() )
+            output = self.GetOutput()
+            #output=None
+            io=EclipseIO(output)
+            io.read_egrid(FileName+".egrid")
+            io.create_grid()
+            io.read_restart(FileName+".unrst")
 
-        #print servermanager.GetRenderView()
-        #view=servermanager.CreateRenderView()
-        #view.ResetCamera() 
-        import paraview.simple 
-        paraview.simple.ResetCamera()
-        EclipseIO.running_reader=False    
+            paraview.simple.ResetCamera()
+            self.Running=False
+
+        expect err:
+            self.Running=False
+            raise err
+
 
 if __name__ == '__main__':
     main()  
