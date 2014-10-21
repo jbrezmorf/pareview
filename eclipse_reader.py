@@ -1,9 +1,10 @@
 
 import paraview.simple 
 import os
+import sys
 import numpy as np
 from vtk.util import numpy_support
-
+import vtk
 
 
 VTK_HEXAHEDRON=12
@@ -352,16 +353,22 @@ class EclipseIO :
 
 
     '''
-    Create corresponding VTK mesh in self.output object
+    Create corresponding VTK mesh in given output object, that
+    should be vtkUnstructuredGrid. Takes data from self.out 
+    (a root output object) and assumes that they persist. New data
+    are created in provided object output.
     '''
-    def create_grid(self):
+    def create_grid(self, output):
+        if not output.IsA("vtkUnstructuredGrid"):
+            print "Creating grid in wrong dataset. Should be vtkUnstructuredGrid"
+            raise SystemExit
         grid=self.out.grid
         (nx,ny,nz)=grid['dimensions']
         lines=grid['lines']
         z_corners=grid['z_corners']
         
-        self.out.corners=np.empty(3*8*nx*ny*nz, dtype=float)
-        self.out.cells=np.empty(9*nx*ny*nz, dtype=int)
+        output.corners=np.empty(3*8*nx*ny*nz, dtype=float)
+        output.cells=np.empty(9*nx*ny*nz, dtype=int)
         
         i_point=0
         i_corner=0
@@ -380,7 +387,7 @@ class EclipseIO :
             for iy in xrange(ny) :
                 for iz in xrange(nz) :
                     # print "CELL = ", i_cell
-                    self.out.cells[i_cell]=8 # number of vertices
+                    output.cells[i_cell]=8 # number of vertices
                     i_cell+=1
                     # set corners of one cell and cell indices to points
                     
@@ -388,7 +395,7 @@ class EclipseIO :
                     # cell z coords are at 
                     
                     for i_vtx in xrange(8):
-                        self.out.cells[i_cell]=i_point
+                        output.cells[i_cell]=i_point
                         i_cell+=1
                         i_point+=1
                         
@@ -402,23 +409,23 @@ class EclipseIO :
                         z_bot=line[5]
                         t=(z_coord-z_bot)/(z_top-z_bot)
                         (x_coord,y_coord)= top*t + bot*(1-t)
-                        self.out.corners[i_corner] = x_coord
+                        output.corners[i_corner] = x_coord
                         i_corner+=1
-                        self.out.corners[i_corner] = y_coord
+                        output.corners[i_corner] = y_coord
                         i_corner+=1
-                        self.out.corners[i_corner] = z_coord
+                        output.corners[i_corner] = z_coord
                         i_corner+=1
                         
                         # print "    vtx: ", i_vtx, x_coord, y_coord, z_coord
         
-        self.out.corners.shape=(8*nx*ny*nz, 3)                  
-        self.out.points=vtk.vtkPoints()
-        self.out.points.SetData(numpy_support.numpy_to_vtk(self.out.corners)) # 8*nx*ny*nz (x,y,z)
-        self.out.SetPoints(self.out.points)
+        output.corners.shape=(8*nx*ny*nz, 3)                  
+        output.points=vtk.vtkPoints()
+        output.points.SetData(numpy_support.numpy_to_vtk(output.corners)) # 8*nx*ny*nz (x,y,z)
+        output.SetPoints(output.points)
         
-        self.out.cell_array = vtk.vtkCellArray()
-        self.out.cell_array.SetCells(nx*ny*nz, numpy_support.numpy_to_vtkIdTypeArray(self.out.cells)) # nx*ny*nz (n,8*i_point)
-        self.out.SetCells(VTK_HEXAHEDRON, self.out.cell_array) 
+        output.cell_array = vtk.vtkCellArray()
+        output.cell_array.SetCells(nx*ny*nz, numpy_support.numpy_to_vtkIdTypeArray(output.cells)) # nx*ny*nz (n,8*i_point)
+        output.SetCells(VTK_HEXAHEDRON, output.cell_array) 
         
         
         
@@ -552,8 +559,14 @@ class EclipseIO :
         f.close()
         self.out.restart.append(one_step)
         
-        
-    
+    '''
+    Add new PointData to given vkUnstructuredGrid with given name
+    and data in a numpy array. Assumes a grid 
+    '''
+    def make_data_set(self, name, np_array, output):
+        new_array=numpy_support.numpy_to_vtk(np_array)
+        new_array.SetName(name)
+        output.GetPointData().AddArray(new_array)     
 
   
 
@@ -566,25 +579,31 @@ def main():
     if not self.Running:
         self.Running=True
         try:
+            print "Running..."
             FileName='test'
                 
             EclipseIO.FileName=FileName
             if (EclipseIO.FileName==None):
                 raise IOError("No input filename.")
 
-            output = self.GetOutput()
+            multi_output = self.GetOutput()
+            if not output.IsA("vtkMultiBlockDataSet"):
+                print "Wrong output data type. Should be vtkMultiBlockDataSet."
+                raise SystemExit
             #output=None
-            io=EclipseIO(output)
+            io=EclipseIO(multi_output)
             io.read_egrid(FileName+".egrid")
-            io.create_grid()
+            grid_block=vtk.vtkUnstructuredGrid()  
+            io.create_grid(grid_block)
+            multi_output.SetBlock(0, grid_block)
             io.read_restart(FileName+".unrst")
 
             paraview.simple.ResetCamera()
             self.Running=False
-
-        expect err:
+        except:
             self.Running=False
-            raise err
+            print "Unexpected error:", sys.exc_info()[0]
+            raise
 
 
 if __name__ == '__main__':
