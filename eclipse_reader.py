@@ -7,7 +7,7 @@ from vtk.util import numpy_support
 import vtk
 
 
-VTK_HEXAHEDRON=12
+
 
 
 '''
@@ -18,6 +18,8 @@ Attributes:
       auxiliary data directly here
 '''
 class EclipseIO :
+  
+    VTK_HEXAHEDRON=12
 
     '''
     Set definitions of format headers with proper endian (default is big-endian).
@@ -188,6 +190,9 @@ class EclipseIO :
         for item in solution_fields:
             (key,label,unit)=item
             self.solution_fields[key]=(label,unit)
+    
+    
+    
     '''
     Search given 'keyword' in the given binary file 'f'.
     Seeks file 'f' to the first byte of  the keyword. 
@@ -208,6 +213,8 @@ class EclipseIO :
             else:
                 data_str=data_str[len(data_str) - len(keyword):]
                 
+    
+    
     '''
     Check that next block has correct keyword.
     If yes, read the block to the array of appropriate type and return it.
@@ -237,6 +244,9 @@ class EclipseIO :
         else:  
             return array
              
+    
+    
+    
     '''
     Numpy array wrapper which check validity of indices and slices 
     and return None for an index out of the array.
@@ -314,6 +324,8 @@ class EclipseIO :
                 
             return result_dict        
 
+    
+    
     '''
     Read a block by read_array and convert it to dictionary
     using specification is self.header[keyword]. ..
@@ -358,6 +370,8 @@ class EclipseIO :
           f.seek(-8, os.SEEK_CUR)
           return None
     '''
+    
+    
     '''
     Reads EGRID file with name given by parameter 'filename' and
     store it into (empty) output object given by 'pdo' parameter.
@@ -645,6 +659,13 @@ class EclipseIO :
             else:
                 name=key  
             self.make_data_set(name, array, output)
+            
+            
+    def RequestInformation(program_filter)):
+        return None
+      
+    def RequestData(program_filter):
+      
   
 
 #@no_recursion
