@@ -21,9 +21,9 @@
             </Documentation>
       </StringVectorProperty>
       
-      <!-- Set output grid type: vtkUnstructuredGrid -->
+      <!-- Set output grid type: vtkMultiblockDataSet -->
       <IntVectorProperty command="SetOutputDataSetType"
-                         default_values="4"
+                         default_values="13"
                          name="OutputDataSetType"
                          number_of_elements="1"
                          panel_visibility="never">
@@ -35,7 +35,7 @@
         name="Script"
         command="SetScript"
         number_of_elements="1"
-        default_values="__SCRIPT_PLACEHOLDER__"
+        default_values="__RequestDataScript__"
         panel_visibility="advanced">
         <Hints>
          <Widget type="multi_line"/>
@@ -44,8 +44,30 @@
       the programmable source runs.</Documentation>
       </StringVectorProperty>
 
+      <StringVectorProperty
+        name="InformationScript"
+        command="SetInformationScript"
+        number_of_elements="1"
+        default_values="__RequestInformationScript__"
+        panel_visibility="advanced">
+        <Hints>
+         <Widget type="multi_line"/>
+        </Hints>
+      <Documentation>This property contains the text of a python program that
+      the programmable source runs.</Documentation>
+      </StringVectorProperty>
+      
+      <DoubleVectorProperty
+        name="TimestepValues"
+        information_only="1">
+        <TimeStepsInformationHelper/>
+        <Documentation>
+          Available timestep values.
+        </Documentation>  
+      </DoubleVectorProperty>
+      
       <Hints>
-        <ReaderFactory extensions="egrid"
+        <ReaderFactory extensions="egrid unrst"
                        file_description="Eclipse mesh File Format" />
       </Hints>
     </SourceProxy>

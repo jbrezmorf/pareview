@@ -1,2 +1,2 @@
-plugin: eclipse_reader_template.xml eclipse_reader.py
-	python make_plugin_xml.py eclipse_reader_template.xml eclipse_reader.py
+plugin: eclipse_reader_template.xml eclipse_reader_info.py eclipse_reader_data.py make_plugin_xml.py
+	python make_plugin_xml.py eclipse_reader_template.xml eclipse_reader_info.py eclipse_reader_data.py

@@ -1,7 +1,7 @@
 '''
-Substitute a string "__SCRIPT_PLACEHOLDER__" in the XML template file with the script 
-preforming proper XML escaping.
-Usage: python make_plugin_xml.py <xml_template> <script>
+Substitute a strings __RequestDataScript__ and __RequestInformationScript__ in the XML template file
+with the RequestData script and RequestInformation script respectively. Performs proper XML escaping.
+Usage: python make_plugin_xml.py <xml_template> <RequestInformation script> <RequestData script>
 '''
 
 import os
@@ -22,14 +22,14 @@ def escapeForXmlAttribute(s):
     s = s.replace('>', '&gt;')
     s = s.replace('"', '&quot;')
     s = s.replace('\r', '&#xD;')
-    s = s.replace('\n', '&#xA;\n')
+    s = s.replace('\n', '&#xA;')
     s = s.replace('\t', '&#x9;')
     return s
   
 def main():
 
-    if len(sys.argv) != 3:
-        print 'Usage: %s <xml_template> <script>' % sys.argv[0]
+    if len(sys.argv) != 4:
+        print 'Usage: python %s <xml_template> <RequestInformation script> <RequestData script>' % sys.argv[0]
         sys.exit(1)
 
     
@@ -38,9 +38,12 @@ def main():
     with open(xml_template_file, "rt") as file:
         xml_template=file.read()
     with open(sys.argv[2], "rt") as file:
-        script=file.read()
+        info_script=file.read()
+    with open(sys.argv[3], "rt") as file:
+        data_script=file.read()
 
-    xml_template=xml_template.replace("__SCRIPT_PLACEHOLDER__", escapeForXmlAttribute(script))
+    xml_template=xml_template.replace("__RequestInformationScript__", escapeForXmlAttribute(info_script))
+    xml_template=xml_template.replace("__RequestDataScript__", escapeForXmlAttribute(data_script))
     with open(output_xml, "wt") as file:
         file.write(xml_template)
     

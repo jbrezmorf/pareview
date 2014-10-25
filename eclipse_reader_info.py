@@ -656,13 +656,11 @@ class EclipseIO :
                         fields.append( vtk_array )      
                 one_step['fields']=fields    
                 self.restart.append(one_step)
-                print "restart size:", len(self.restart)
                 
                 #buff=str(f.read(4))
                 #print "buff:", buff
                 #f.seek(-4,os.SEEK_CUR)
                 if (self.skip_to_keyword(f,'SEQNUM  ') == -1):
-                    print "EOF"
                     break 
             # end step loop
             
@@ -751,7 +749,7 @@ class EclipseIO :
             self.np_times=np.array(self.times)
             
             executive=program_filter.GetExecutive()
-            help(executive.__class__)
+            #help(executive.__class__)
             out_info=executive.GetOutputInformation(0)
             #out_info=executive.GetOutputInformation().GetInformationObject(0)
             out_info.Remove(executive.TIME_STEPS())
@@ -761,7 +759,7 @@ class EclipseIO :
             out_info.Remove(executive.TIME_RANGE())
             out_info.Append(executive.TIME_RANGE(), self.times[0])
             out_info.Append(executive.TIME_RANGE(), self.times[-1])
-            print out_info
+            #print out_info
             #print "Times:", times
             
     '''
@@ -785,7 +783,6 @@ class EclipseIO :
         with self.running_guard(program_filter):
             self.ExtractFilterOutput(program_filter)
             timestep=self.GetUpdateTimeStep(program_filter)
-            print "TimeStep: ", timestep
             
             # optionaly create the grid
             grid_block=self.output.GetBlock(0)
@@ -795,12 +792,12 @@ class EclipseIO :
                 self.create_grid(grid_block)
                 self.output.SetBlock(0, grid_block)
             
-            if hasattr(self, 'sphere'):
-                del self.sphere
-            self.sphere=vtk.vtkSphereSource()
-            self.sphere.SetCenter((0,0,timestep))
-            self.sphere.Update()
-            self.output.SetBlock(1, self.sphere.GetOutput())                            
+            #if hasattr(self, 'sphere'):
+            #    del self.sphere
+            #self.sphere=vtk.vtkSphereSource()
+            #self.sphere.SetCenter((0,0,timestep))
+            #self.sphere.Update()
+            #self.output.SetBlock(1, self.sphere.GetOutput())                            
             
             #optionaly read data
             if not hasattr(self,"restart"):
@@ -810,10 +807,7 @@ class EclipseIO :
             
             #find time
             i_time=np.abs(self.np_times-timestep).argmin()
-            print "I time:", i_time
             timestep=self.times[i_time]
-            print "New time:", timestep
-            print "restart size:", len(self.restart)
             # make datasets        
             self.set_all_data_sets(self.restart[i_time], grid_block)
             # mark correct timestep 
@@ -821,7 +815,8 @@ class EclipseIO :
             
             # possibly reset camera to get correct view
             # need working recursion prevention
-            print "reset camera"
+            # Finally it is done automaticaly but we may want other orientation of the system.
+            #print "reset camera"
             #paraview.simple.ResetCamera()
 
 
