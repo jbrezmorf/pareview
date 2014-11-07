@@ -7,6 +7,7 @@ from vtk.util import numpy_support
 import vtk
 from contextlib import contextmanager
 from collections import namedtuple
+import traceback
 
 
 
@@ -81,7 +82,7 @@ class EclipseIO :
         
         self.block_spec['MAPUNITS']=[str,'units']
         
-        self.block_spec['MAPAXES']=[float,          
+        self.block_spec['MAPAXES ']=[float,          
           (0,'y_axis_end',2), # x,y coordinate tuple
           (0,'origin', 2),
           (0,'x_axis_end',2)
@@ -145,8 +146,8 @@ class EclipseIO :
         self.block_spec['DOUBHEAD']=[float,'time_in_days'] # day of the report step
 
         self.block_spec['well_data']=[int,
-          (0,'wellhead_pos_ijk',3),
-          'n_connections',
+          (0,'wellhead_pos_ijk',3),  # well position; cell indices i,j,k
+          'n_connections',              
           'i_group',
           'well_type', #1-producer; 2-oil injection; 3-water injection; 4-gass injection
           (11,'well_status'), # >0 open; <=0 shut
@@ -283,16 +284,35 @@ class EclipseIO :
                 
     
     '''
-    Check that next block has correct keyword.
+    Without parameters read the block and return tuple consisting of the 
+    block name and block data.
+    
+    If the keyword parameter is given check that the block has correct keyword.
     If yes, read the block to the array of appropriate type and return it.
     If no, seek back and return None.
+    
+    Arrays are stored in named block using Fortran UNFORMATED data format (unfortunately not standardized).
+    It seems that the format is as follows:
+    position    bytes           meaning
+    0x0000      8               blockname
+    0x0008      4               number of stored items
+    0x000c      4               type signature of the items
+    0x0010      4               0x10 ??
+    0x0014      4               N - subblock size in bytes
+    ...         N 
+                4               N - subblock size in bytes
+    ...                         repetition of subblocks up to total number of items
+                4               0x10 ??
     '''
-    def read_array(self, f, keyword=None, check_type=None, check_size=None):            
+    def read_array(self, f, keyword=None, check_type=None, check_size=None, optional=False):            
         in_keyword=f.read(8)
         if (keyword is not None and keyword!=in_keyword):
-            f.seek(-8, os.SEEK_CUR)
-            return None
-          
+            if optional:
+                f.seek(-8, os.SEEK_CUR)
+                return None
+            else:
+                print "Missing obligatory block: ", keyword, "have block: ", in_keyword
+                raise SystemExit
 
         size=np.fromfile(f, dtype=np.dtype(self.types['INTE']), count=1 )[0]
         elem_type=np.fromfile(f, dtype=np.dtype('S4'), count=1 )[0]
@@ -302,9 +322,16 @@ class EclipseIO :
             assert(self.types[check_type]==elem_dtype)
         if (check_size is not None):
             assert(check_size==size)
-        f.read(8) # 0x10 block_code
-        array=np.fromfile(f, dtype=elem_dtype, count=size)
-        f.read(8) # block_code 0x10
+        f.read(4) # 0x10 block_code
+        
+        array=np.array([], dtype=elem_dtype)
+        while (array.size < size):
+            n_bytes=np.fromfile(f, dtype=np.dtype(self.types['INTE']), count=1 )[0]
+            string=f.read(n_bytes)
+            array=np.append(array, np.fromstring(string, dtype=elem_dtype))
+            n_bytes_end=np.fromfile(f, dtype=np.dtype(self.types['INTE']), count=1 )[0]             
+            assert(n_bytes==n_bytes_end)                         
+        f.read(4) # block_code 0x10
         
         if (keyword is None):
             return (in_keyword, array)
@@ -397,9 +424,9 @@ class EclipseIO :
     Read a block by read_array and convert it to dictionary
     using specification is self.header[keyword]. ..
     '''
-    def read_dict(self,f,keyword):
+    def read_dict(self,f,keyword, optional=False):
         spec=self.block_spec[keyword]
-        in_array=self.read_array(f,keyword)
+        in_array=self.read_array(f,keyword, optional=optional)
         return self.Array(in_array).make_dict(spec)        
               
     
@@ -420,29 +447,37 @@ class EclipseIO :
             grid={}
             
             grid['filehead']=self.read_dict(f, "FILEHEAD")
-            grid['mapunits']=self.read_dict(f, "MAPUNITS")        
-            grid['mapaxes']=self.read_dict(f,"MAPAXES")
+            grid['mapunits']=self.read_dict(f, "MAPUNITS", optional=True)        
+            grid['mapaxes']=self.read_dict(f,"MAPAXES ", optional=True)
+            grid['grid_unit']=self.read_dict(f,"GRIDUNIT", optional=True)
             
             grid['gridhead']=self.read_dict(f,"GRIDHEAD")
-            (nx,ny,nz) = grid['dimensions'] = grid['gridhead']['dimensions']
             
-            nlines=(nx+1)*(ny+1)*grid['gridhead']['numres']
+            numres=grid['gridhead']['numres']
+            print "Numres: ", numres
+            (nx,ny,nz) = grid['dimensions'] = grid['gridhead']['dimensions']            
+            nlines=(nx+1)*(ny+1)*numres
 
-            grid['boxorig']=self.read_dict(f,"BOXORIG ")       
+            grid['boxorig']=self.read_dict(f,"BOXORIG ", optional=True)       
             grid['lines']=self.read_array(f,"COORD   ", 'REAL', 6*nlines)
             grid['lines'].shape=(nlines,6)
             
-            res_data=self.read_array(f,"COORDSYS", 'INTE', 6*grid['gridhead']['numres'])
+            res_data=self.read_array(f,"COORDSYS", 'INTE', 6*grid['gridhead']['numres'], optional=True)
             if (res_data):
                 res_data.shape=(grid['gridhead']['numres'], 6)
                 grid['reservoirs']=res_data
             
             grid['z_corners']=self.read_array(f,"ZCORN   ", 'REAL', 8*nx*ny*nz)
-            grid['active_cells']=self.read_array(f,"ACTNUM  ", 'INTE', nx*ny*nz) 
+            active=self.read_array(f,"ACTNUM  ", 'INTE', nx*ny*nz, optional=True)
+            if active is not None:             
+                grid['active_cells']=(active==1) # create boolean array
+                assert(active.size == nx*ny*nz)
+            else:
+                grid['active_cells']=None
             # 0-inactive, 1-active, 2-active fracture, 3-active matrix and fracture 
             
-            grid['coarsening']=self.read_array(f,"CORSNUM ", 'INTE', nx*ny*nz) 
-            grid['hostcells']=self.read_array(f,"HOSTNUM ", 'INTE', nx*ny*nz) 
+            grid['coarsening']=self.read_array(f,"CORSNUM ", 'INTE', nx*ny*nz, optional=True) 
+            grid['hostcells']=self.read_array(f,"HOSTNUM ", 'INTE', nx*ny*nz, optional=True) #LGR only
             self.read_array(f,"ENDGRID ")
             
             assert(grid['lines'] != None)
@@ -452,7 +487,6 @@ class EclipseIO :
             #print "CORNERS\n",z_corners
             self.grid=grid
         
-
 
     '''
     Create corresponding VTK mesh in given output object, that
@@ -464,6 +498,12 @@ class EclipseIO :
         if not output.IsA("vtkUnstructuredGrid"):
             print "Creating grid in wrong dataset. Should be vtkUnstructuredGrid"
             raise SystemExit
+
+        # eclipse coordinate system:  
+        #           / 
+        #  x  <---|/
+        #         |
+        #         v z
         
         grid=self.grid
         (nx,ny,nz)=grid['dimensions']
@@ -471,67 +511,57 @@ class EclipseIO :
         z_corners=grid['z_corners']
         
         output.Reset()
-        output.corners=np.empty(3*8*nx*ny*nz, dtype=float)
-        output.cells=np.empty(9*nx*ny*nz, dtype=int)
         
-        i_point=0
-        i_corner=0
-        i_cell=0
+        # number lines
+        i_line=np.arange(lines.shape[0]).reshape((ny+1,nx+1))
+        # distribute line numbers to corners in one X, Y layer
+        # make them broadcastable to Z direction
+        i_line=np.repeat( np.repeat(i_line, 2, axis=0), 2, axis=1)[1:-1, 1:-1].reshape(1,-1)
+        assert(i_line.shape[1] == 2*nx*2*ny)
+        # separate Z direction to use broadcasting of line numbers
+        z_corners.shape=(-1, 2*nx*2*ny)
+        assert(z_corners.shape[0]==2*nz)
         
-        # eclipse coordinate system:  
-        #           / 
-        #  x  <---|/
-        #         |
-        #         v z
+        # interpolate X,Y of corners on lines
+        z_line_top=lines[i_line,2]
+        z_line_bot=lines[i_line,5]
+        t= (z_corners - z_line_top)/(z_line_bot-z_line_top)
+        x_corners=lines[i_line,0] - t*(lines[i_line,3] - lines[i_line,0])
+        y_corners=lines[i_line,1] - t*(lines[i_line,4] - lines[i_line,1])
         
+        # permute corners to individual cells
+        corners=np.vstack( (x_corners.flatten(), y_corners.flatten(), z_corners.flatten())  )
+        # permute corners on one cell into VTK numbering 
+        local_points=np.arange(24).reshape(2,4,3)[:,[0,1,3,2],:]
+        corn=np.transpose(corners.reshape(3,nz,2,ny,2,nx,2), axes=(1,3,5,2,4,6,0)).reshape(nx*ny*nz, 24)[:,local_points]
+        # compute cell centers for wells
+        self.cell_centers=np.mean(corn.reshape(nz,ny,nx,8,3), axis=3)
         
-        # local coordinates (x,y,z)
-        hexahedron_local_vtx=[(0,0,0),(1,0,0),(1,1,0),(0,1,0),(0,0,1),(1,0,1),(1,1,1),(0,1,1)]
-        for iz in xrange(nz) :
-            for iy in xrange(ny) :
-                for ix in xrange(nx) :
-                    # print "CELL = ", i_cell
-                    output.cells[i_cell]=8 # number of vertices
-                    i_cell+=1
-                    # set corners of one cell and cell indices to points
-                    
-                    # cell vertical lines are at (ix,ix+1) x ( iy, iy+1) in coords
-                    # cell z coords are at 
-                    
-                    for i_vtx in xrange(8):
-                        output.cells[i_cell]=i_point
-                        i_cell+=1
-                        i_point+=1
-                        
-                        loc_x,loc_y,loc_z=hexahedron_local_vtx[i_vtx]
-                        i_zcoord=2*ix+loc_x + 2*nx*(2*iy+loc_y)+ 2*nx*2*ny*(2*iz+loc_z)
-                        z_coord= z_corners[i_zcoord]
-                        line=lines[(ix+loc_x) + (nx+1)*(iy+loc_y)]
-                        top=(line[0], line[1])
-                        z_top=line[2]
-                        bot=(line[3], line[4])
-                        z_bot=line[5]
-                        t=(z_coord-z_bot)/(z_top-z_bot)
-                        (x_coord,y_coord)= top*t + bot*(1-t)
-                        output.corners[i_corner] = x_coord
-                        i_corner+=1
-                        output.corners[i_corner] = y_coord
-                        i_corner+=1
-                        output.corners[i_corner] = z_coord
-                        i_corner+=1
-                        
-                        # print "    vtx: ", i_vtx, x_coord, y_coord, z_coord
+        # possibly remove non-active cells
+        active=grid['active_cells']
+        if active is not None:
+            output.corners=corn[active, :]
+        else:
+            output.corners=corn
+        n_cells=output.corners.shape[0]            
+        output.corners.shape=(8*n_cells, 3)                  
         
-        output.corners.shape=(8*nx*ny*nz, 3)                  
+        # create cell to corner map
+        output.cells=np.empty((n_cells,9), dtype=int)
+        output.cells[:,0]=8
+        output.cells[:,1:9]=np.arange(8*n_cells).reshape((-1,8))               
+        output.cells.shape=(-1)        
+        
         output.points=vtk.vtkPoints()
         output.points.SetData(numpy_support.numpy_to_vtk(output.corners)) # 8*nx*ny*nz (x,y,z)
         output.SetPoints(output.points)
         
         output.cell_array = vtk.vtkCellArray()
-        output.cell_array.SetCells(nx*ny*nz, numpy_support.numpy_to_vtkIdTypeArray(output.cells)) # nx*ny*nz (n,8*i_point)
+        output.cell_array.SetCells(n_cells, numpy_support.numpy_to_vtkIdTypeArray(output.cells)) # nx*ny*nz (n,8*i_point)
         output.SetCells(self.VTK_HEXAHEDRON, output.cell_array) 
         
-          
+        
+        
         
     '''
     Read a restart file as an array of times
@@ -625,19 +655,21 @@ class EclipseIO :
                             
                 one_step['wells']=wells
                 
-                self.read_array(f,'SCON    ')
-                self.read_array(f,'XCON    ')
-                self.read_array(f,'DLYTIM  ')
-                self.read_array(f,'IAAQ    ')
-                self.read_array(f,'SAAQ    ')
-                self.read_array(f,'XAAQ    ')
-                self.read_array(f,'ICAQNUM ')
-                self.read_array(f,'ICAQ    ')
-                self.read_array(f,'SCAQNUM ')
-                self.read_array(f,'SCAQ    ')
+                #self.read_array(f,'SCON    ')
+                #self.read_array(f,'XCON    ')
+                #self.read_array(f,'DLYTIM  ')
+                #self.read_array(f,'IAAQ    ')
+                #self.read_array(f,'SAAQ    ')
+                #self.read_array(f,'XAAQ    ')
+                #self.read_array(f,'ICAQNUM ')
+                #self.read_array(f,'ICAQ    ')
+                #self.read_array(f,'SCAQNUM ')
+                #self.read_array(f,'SCAQ    ')
+                #self.read_array(f,'ACAQNUM '))
+                #self.read_array(f,'ACAQ    '))                        
                 
-                self.read_array(f,'HIDDEN  ') # skip
-                self.read_array(f,'ZTRACER ') # skip for now
+                #self.read_array(f,'HIDDEN  ') # skip
+                #self.read_array(f,'ZTRACER ') # skip for now
 
                 # read data fields  
                 self.skip_to_keyword(f,'STARTSOL')
@@ -684,9 +716,9 @@ class EclipseIO :
                     break
                 i_time+=1  
                 seq_num=self.read_dict(f,'SEQNUM  ')['file_sequence_number']
-                if (i_time != seq_num):
-                    print "Wrong sequence number", seq_num, " at position ", i_time
-                    raise AssertionError
+                #if (i_time != seq_num):
+                #    print "Wrong sequence number", seq_num, " at position ", i_time
+                #    raise AssertionError
                 eof=self.skip_to_keyword(f, 'DOUBHEAD')
                 if (eof==-1):
                     print "No DOUBHEAD section after SEQNUM section."
@@ -701,7 +733,7 @@ class EclipseIO :
     and data in a numpy array. Assumes a grid 
     '''
     def make_data_set(self, key, np_array):
-        # check tht key is known
+        # check that key is known
         if self.solution_fields.has_key(key):
             name=self.solution_fields[key][0]
         else:
@@ -718,6 +750,60 @@ class EclipseIO :
             return None  
         new_array.SetName(name)
         return new_array
+
+    '''
+    Create vtkPolyData representing the wells.
+    Input - restart data for current time step.
+    '''
+    def make_wells(self, one_step):        
+        out=vtk.vtkPolyData()
+
+        wells=one_step['wells']
+        n_wells=len(wells)
+        
+        points=np.empty( (n_wells, 2, 3), dtype=self.cell_centers.dtype)
+        lines=np.empty( (n_wells, 3), dtype='int64')
+        
+        i_well=0
+        for well in wells:
+            head_pos=well['wellhead_pos_ijk']-1
+            well_type=well['well_type'] #1-producer; 2-oil injection; 3-water injection; 4-gass injection
+            well_status=well['well_status'] # >0 open; <=0 shut
+            name=well['name']
+            #connections=well['completions']
+            '''
+            for conect in connections:
+                pos=conect['coordinates'] # ijk cell 
+                status=conect['status'] # connection status >0 open, <=0 shut
+            '''
+            # need cell centers for all cells
+            print self.cell_centers.shape
+            print head_pos 
+            head=self.cell_centers[head_pos[2]-1, head_pos[1]-1, head_pos[0],0:3]
+            
+            print i_well
+            print head
+            points[i_well,0,0:3]=head
+            
+            head_shift=head-np.array([0,0,100])
+            points[i_well,1,0:3]=head_shift
+            lines[i_well,0]=2
+            lines[i_well,1]=2*i_well
+            lines[i_well,2]=2*i_well+1
+            i_well+=1
+        
+        points.shape=(-1,3)
+        lines.shape=(-1)
+        
+        vtk_points=vtk.vtkPoints()
+        vtk_points.SetData(numpy_support.numpy_to_vtk(points, deep=True))
+        out.SetPoints(vtk_points)
+        
+        point_cells=vtk.vtkCellArray()   
+        point_cells.SetCells(n_wells, numpy_support.numpy_to_vtkIdTypeArray(lines, deep=True))
+        out.SetLines(point_cells)
+
+        return out   
 
 
         
@@ -780,45 +866,61 @@ class EclipseIO :
     Setting data to the filter output
     '''
     def RequestData(self, program_filter):
-        with self.running_guard(program_filter):
-            self.ExtractFilterOutput(program_filter)
-            timestep=self.GetUpdateTimeStep(program_filter)
-            
-            # optionaly create the grid
-            grid_block=self.output.GetBlock(0)
-            if not grid_block:
-                self.read_egrid()
-                grid_block=vtk.vtkUnstructuredGrid()  
-                self.create_grid(grid_block)
-                self.output.SetBlock(0, grid_block)
-            
-            #if hasattr(self, 'sphere'):
-            #    del self.sphere
-            #self.sphere=vtk.vtkSphereSource()
-            #self.sphere.SetCenter((0,0,timestep))
-            #self.sphere.Update()
-            #self.output.SetBlock(1, self.sphere.GetOutput())                            
-            
-            #optionaly read data
-            if not hasattr(self,"restart"):
-                self.read_restart()
-            
-            # set data
-            
-            #find time
-            i_time=np.abs(self.np_times-timestep).argmin()
-            timestep=self.times[i_time]
-            # make datasets        
-            self.set_all_data_sets(self.restart[i_time], grid_block)
-            # mark correct timestep 
-            self.output.GetInformation().Set(self.output.DATA_TIME_STEP(), timestep)
-            
-            # possibly reset camera to get correct view
-            # need working recursion prevention
-            # Finally it is done automaticaly but we may want other orientation of the system.
-            #print "reset camera"
-            #paraview.simple.ResetCamera()
+        try:
+            with self.running_guard(program_filter):
+                
+                self.ExtractFilterOutput(program_filter)
+                timestep=self.GetUpdateTimeStep(program_filter)
+                
+                # optionaly create the grid
+                grid_block=self.output.GetBlock(0)
+                if not grid_block:
+                    self.read_egrid()
+                    grid_block=vtk.vtkUnstructuredGrid()  
+                    self.create_grid(grid_block)
+                    self.output.SetBlock(0, grid_block)
+                
+                #if hasattr(self, 'sphere'):
+                #    del self.sphere
+                #self.sphere=vtk.vtkSphereSource()
+                #self.sphere.SetCenter((0,0,timestep))
+                #self.sphere.Update()
+                #self.output.SetBlock(1, self.sphere.GetOutput())                            
+                
+                # optionaly read data
+                if self.file_names.unrst:
+                    if not hasattr(self,"restart"):
+                        self.read_restart()
+                
+                    #find time
+                    i_time=np.abs(self.np_times-timestep).argmin()
+                    timestep=self.times[i_time]
+                    # make datasets        
+                    self.set_all_data_sets(self.restart[i_time], grid_block)
+                    # mark correct timestep 
+                    self.output.GetInformation().Set(self.output.DATA_TIME_STEP(), timestep)
 
+                    # create wells block  
+                    self.output.SetBlock(1, self.make_wells(self.restart[i_time]) )
+                    
+
+                # possibly reset camera to get correct view
+                # need working recursion prevention
+                # Finally it is done automaticaly but we may want other orientation of the system.
+                #print "reset camera"
+                #paraview.simple.ResetCamera()
+        except BaseException:
+            print "== Eclipse Reader Exception =="
+            (et, ex, tr)=sys.exc_info()
+            print "Exception: ", et, ex
+            traceback.print_tb(tr)
+            
+            
+            
+            # clean output
+            for i_block in range(self.output.GetNumberOfBlocks()):
+                self.output.RemoveBlock(i_block)
+                
 
 
       
@@ -830,8 +932,6 @@ if (not hasattr(self,"info_done_event")):
 if hasattr(self, "code"):
     del self.code
 
-
-FileName="test.egrid"    
 self.code=EclipseIO()   
 self.code.SetFileName(FileName)
 self.code.RequestInformation(self)
