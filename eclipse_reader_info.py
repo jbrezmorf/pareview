@@ -9,8 +9,33 @@ from contextlib import contextmanager
 from collections import namedtuple
 import traceback
 
+'''
+Simple timer.
+'''
+import time
 
+class timewith():
+    def __init__(self, name=''):
+        self.name = name
+        self.start = time.time()
 
+    @property
+    def elapsed(self):
+        return time.time() - self.start
+
+    def checkpoint(self, name=''):
+        print '{timer} {checkpoint} took {elapsed} seconds'.format(
+            timer=self.name,
+            checkpoint=name,
+            elapsed=self.elapsed,
+        ).strip()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.checkpoint('finished')
+        pass
 
 '''
 Class for reading Eclipse files and producing Paraview datasets.
@@ -237,6 +262,7 @@ class EclipseIO :
     Get output object from the filter, check its type and store in self.
     '''
     def ExtractFilterOutput(self, program_filter):
+        if not hasattr(self, "output"):
             multi_output = program_filter.GetOutput()
             if not multi_output.IsA("vtkMultiBlockDataSet"):
                 print "Wrong output data type. Should be vtkMultiBlockDataSet."
@@ -454,7 +480,7 @@ class EclipseIO :
             grid['gridhead']=self.read_dict(f,"GRIDHEAD")
             
             numres=grid['gridhead']['numres']
-            print "Numres: ", numres
+            #print "Numres: ", numres
             (nx,ny,nz) = grid['dimensions'] = grid['gridhead']['dimensions']            
             nlines=(nx+1)*(ny+1)*numres
 
@@ -494,10 +520,15 @@ class EclipseIO :
     and assumes that they persist. New data
     are created in provided object output.
     '''
-    def create_grid(self, output):
-        if not output.IsA("vtkUnstructuredGrid"):
-            print "Creating grid in wrong dataset. Should be vtkUnstructuredGrid"
+    def create_grid(self):
+        if not hasattr(self, "grid"):
+            print "Grid data not loaded."
             raise SystemExit
+          
+        if hasattr(self, "vtk_grid"):
+            return self.vtk_grid
+          
+        output=vtk.vtkUnstructuredGrid()
 
         # eclipse coordinate system:  
         #           / 
@@ -559,6 +590,10 @@ class EclipseIO :
         output.cell_array = vtk.vtkCellArray()
         output.cell_array.SetCells(n_cells, numpy_support.numpy_to_vtkIdTypeArray(output.cells)) # nx*ny*nz (n,8*i_point)
         output.SetCells(self.VTK_HEXAHEDRON, output.cell_array) 
+        
+        self.vtk_grid=output
+        
+        return self.vtk_grid
         
         
         
@@ -777,12 +812,12 @@ class EclipseIO :
                 status=conect['status'] # connection status >0 open, <=0 shut
             '''
             # need cell centers for all cells
-            print self.cell_centers.shape
-            print head_pos 
+            #print self.cell_centers.shape
+            #print head_pos 
             head=self.cell_centers[head_pos[2]-1, head_pos[1]-1, head_pos[0],0:3]
             
-            print i_well
-            print head
+            #print i_well
+            #print head
             points[i_well,0,0:3]=head
             
             head_shift=head-np.array([0,0,100])
@@ -868,40 +903,33 @@ class EclipseIO :
     def RequestData(self, program_filter):
         try:
             with self.running_guard(program_filter):
+                if not hasattr(self, "grid"):
+                    self.read_egrid() 
                 
                 self.ExtractFilterOutput(program_filter)
                 timestep=self.GetUpdateTimeStep(program_filter)
                 
                 # optionaly create the grid
-                grid_block=self.output.GetBlock(0)
-                if not grid_block:
-                    self.read_egrid()
-                    grid_block=vtk.vtkUnstructuredGrid()  
-                    self.create_grid(grid_block)
-                    self.output.SetBlock(0, grid_block)
-                
-                #if hasattr(self, 'sphere'):
-                #    del self.sphere
-                #self.sphere=vtk.vtkSphereSource()
-                #self.sphere.SetCenter((0,0,timestep))
-                #self.sphere.Update()
-                #self.output.SetBlock(1, self.sphere.GetOutput())                            
+                if not self.output.GetBlock(0):                              
+                    self.output.SetBlock(0, self.create_grid() )
+                    self.output.GetMetaData(0).Set(self.output.NAME(), "eclipse grid");                    
                 
                 # optionaly read data
                 if self.file_names.unrst:
-                    if not hasattr(self,"restart"):
+                    if not hasattr(self, "restart"):
                         self.read_restart()
                 
                     #find time
                     i_time=np.abs(self.np_times-timestep).argmin()
                     timestep=self.times[i_time]
                     # make datasets        
-                    self.set_all_data_sets(self.restart[i_time], grid_block)
+                    self.set_all_data_sets(self.restart[i_time], self.output.GetBlock(0))
                     # mark correct timestep 
                     self.output.GetInformation().Set(self.output.DATA_TIME_STEP(), timestep)
 
                     # create wells block  
                     self.output.SetBlock(1, self.make_wells(self.restart[i_time]) )
+                    self.output.GetMetaData(1).Set(self.output.NAME(), "eclipse wells");                    
                     
 
                 # possibly reset camera to get correct view
