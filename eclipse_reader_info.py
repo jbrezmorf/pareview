@@ -402,8 +402,10 @@ class EclipseIO :
         'name' - set key 'name' to current value
         (20,'name') - jump forward to position 20 and set that value to the key 'name'
         (0,'name') - same as simply 'name'
-        (0,'name',3) - form array from 3 following values and assign to the key 'name'
-        (10,'name',3) - jump forward and form array ...
+        (0,'name',3) - form numpy array from 3 following values and assign to the key 'name'
+        (10,'name',3) - jump forward and form a numpy array ...
+        
+        Vector items are numpy arrays.
         '''
         def make_dict(self, spec):
             in_array=self.array
@@ -454,8 +456,21 @@ class EclipseIO :
         spec=self.block_spec[keyword]
         in_array=self.read_array(f,keyword, optional=optional)
         return self.Array(in_array).make_dict(spec)        
-              
-    
+
+    '''
+    Read a block by read_array and connects individual character octets into an
+    array of strings.
+    '''
+    def read_string_array(self,f, keyword, n_strings, n_octets_per_string, optional=False):            
+        octets=self.read_array(f, keyword, 'CHAR', n_strings*n_octets_per_string, optional)  
+        octets.shape=(n_strings, n_octets_per_string)
+        
+        strings=n_strings*[""]
+        for i in xrange(n_strings):
+            tmp_str="".join(octets[i])
+            strings[i]=tmp_str.strip()
+            
+        return strings    
     
     '''
     Reads EGRID file with name given by parameter 'filename' and
@@ -595,8 +610,7 @@ class EclipseIO :
         
         return self.vtk_grid
         
-        
-        
+       
         
     '''
     Read a restart file as an array of times
@@ -626,25 +640,48 @@ class EclipseIO :
                 n_groups=one_step['head']['n_max_groups']
                 group_data_size=one_step['head']['n_data_per_group']
                 n_wells_in_group=one_step['head']['n_max_wells_per_group']
-                groups_data=self.read_array(f,'IGRP    ', 'INTE', n_groups*group_data_size)
-                groups_data.shape=(n_groups, group_data_size)
-                groups=[]
-                for group_data in groups_data:
-                    one_group_data=self.Array(group_data)
-                    group={}
-                    group['childs']=one_group_data[0:n_wells_in_group-1]
-                    group['n_childs']=one_group_data[n_wells_in_group]
-                    group['group_type']=one_group_data[n_wells_in_group+26]
+                group_i_data=self.read_array(f,'IGRP    ', 'INTE', n_groups*group_data_size)
+                group_i_data.shape=(n_groups, group_data_size)
+                
+                # first create array of groups with raw data
+                group_data=[]
+                for i_data in group_i_data:
+                    one_group_data=self.Array(i_data)
+                    data={}
+                    childs=one_group_data[0:n_wells_in_group]
+                    n_childs=one_group_data[n_wells_in_group]
+                    data['childs']=childs[0:n_childs]
+                    data['type']=one_group_data[n_wells_in_group+26]
                     # 0-well_group, 1-node_group (childs are groups), 2- satellite group, 3-slave group
-                    group['group_level']=one_group_data[n_wells_in_group+27]
-                    group['parent_group']=one_group_data[n_wells_in_group+28]
-                    
-                    groups.append(group)
-                one_step['groups']=groups    
+                    data['level']=one_group_data[n_wells_in_group+27]
+                    data['parent_group']=one_group_data[n_wells_in_group+28]                    
+                    #print "====="
+                    #print data
+                    #print "-----"
+                    #print one_group_data[n_wells_in_group+29:]
+                    group_data.append(data)
+                
                 self.read_array(f,'SGRP    ')
                 self.read_array(f,'XGRP    ')
-                self.read_array(f,'ZGRP    ')
                 
+                # undocumented block with group names
+                n_words_per_group_name=5 # seems that this is fixed constant                
+                name_array=self.read_string_array(f,'ZGRP    ', n_groups, n_words_per_group_name)
+                for i_group in xrange(n_groups):                    
+                    group_data[i_group]['name']=name_array[i_group]
+                    #print "=====================", i_group
+                    #print group_data[i_group]
+                
+                # create a tree from the raw group data
+                #i_root=None
+                #for i_grp in xrange(n_groups):
+                #    data=group_data[i_grp]
+                #    parent=data['parent_group']
+                #    if parent==0 and data['group_level']==0:   
+                #        i_root=parent-1
+                #    group_data['subgroups']    
+                
+                one_step['group_data']=group_data 
                 
                 '''
                 n_seg_wells=one_step['n_max_segmented_wells']
@@ -659,7 +696,7 @@ class EclipseIO :
                 '''
                 
                 n_wells=one_step['head']['n_wells']
-                well_data_size=one_step['head']['n_data_per_well']
+                well_data_size=one_step['head']['n_data_per_well']                
                 wells_data=self.read_array(f,'IWEL    ', 'INTE', n_wells*well_data_size)
                 wells_data.shape=(n_wells, well_data_size)
                 wells=[]
@@ -670,12 +707,9 @@ class EclipseIO :
                 self.read_array(f,'SWEL    ')
                 self.read_array(f,'XWEL    ')
                 
-                n_words_per_well=one_step['head']['n_words_per_well']
-                well_names_data=self.read_array(f,'ZWEL    ', 'CHAR', n_wells*n_words_per_well)  
-                well_names_data.shape=(n_wells, n_words_per_well)
-                for i_well in xrange(n_wells):
-                    name="".join(well_names_data[i_well])
-                    wells[i_well]['name']=name.strip()
+                name_array=self.read_string_array(f,'ZWEL    ', n_wells, one_step['head']['n_words_per_well'])
+                for i_well in xrange(n_wells):                    
+                    wells[i_well]['name']=name_array[i_well]
                 
                 n_completion=one_step['head']['n_max_completitions_per_well']
                 n_per_completion=one_step['head']['n_data_per_completition']
@@ -703,7 +737,10 @@ class EclipseIO :
                 #self.read_array(f,'ACAQNUM '))
                 #self.read_array(f,'ACAQ    '))                        
                 
-                #self.read_array(f,'HIDDEN  ') # skip
+                # hidden contains names of solution arrays that 
+                # are just internal and should not be post-processed
+                # self.skip_to_keyword(f,'HIDDEN')
+                # self.read_array(f,'HIDDEN  ') # skip
                 #self.read_array(f,'ZTRACER ') # skip for now
 
                 # read data fields  
@@ -761,6 +798,13 @@ class EclipseIO :
                 times.append(self.read_dict(f,'DOUBHEAD')['time_in_days']) 
         self.times=times
                 
+
+    '''
+    '''
+    def add_dataset_to_multiblock(self, multiblock, dataset, name):
+        n=multiblock.GetNumberOfBlocks()
+        multiblock.SetBlock(n, dataset)
+        multiblock.GetMetaData(n).Set(multiblock.NAME(), name)
         
         
     '''
@@ -791,52 +835,72 @@ class EclipseIO :
     Input - restart data for current time step.
     '''
     def make_wells(self, one_step):        
-        out=vtk.vtkPolyData()
+        wells=one_step['wells']        
+        groups=one_step['group_data']
+        n_groups=len(groups)
+        
+        out=vtk.vtkMultiBlockDataSet()
+        for i_group in xrange(n_groups):
+            group=groups[i_group]
+            if not group['type'] == 0: # non-well group
+                continue
+                          
+            # check well indices
+            group_well_ids=[]
+            for i_well in group['childs']:
+                #if not wells[i_well-1]['i_group']==i_group+1:
+                #    print "Warning: well of a group do not point back", group['childs'], i_group, wells[i_well-1]['i_group']
+                group_well_ids.append(i_well-1)
+                    
+            n_wells=len(group_well_ids)
+            if n_wells==0:
+                continue
+            
+            points=np.empty( (n_wells, 2, 3), dtype=self.cell_centers.dtype)
+            lines=np.empty( (n_wells, 3), dtype='int64')
+        
+            for i_well in xrange(n_wells):                
+                well=wells[ group_well_ids[i_well] ]
+                head_pos=well['wellhead_pos_ijk']-1
+                well_type=well['well_type'] #1-producer; 2-oil injection; 3-water injection; 4-gass injection
+                well_status=well['well_status'] # >0 open; <=0 shut
+                name=well['name']
+                #connections=well['completions']
+                '''
+                for conect in connections:
+                    pos=conect['coordinates'] # ijk cell 
+                    status=conect['status'] # connection status >0 open, <=0 shut
+                '''
+                # need cell centers for all cells
+                #print self.cell_centers.shape
+                #print head_pos 
+                head=self.cell_centers[head_pos[2]-1, head_pos[1]-1, head_pos[0],0:3]
+                
+                #print i_well
+                #print head
+                points[i_well,0,0:3]=head
+                
+                head_shift=head-np.array([0,0,100])
+                points[i_well,1,0:3]=head_shift
+                lines[i_well,0]=2
+                lines[i_well,1]=2*i_well
+                lines[i_well,2]=2*i_well+1
+                i_well+=1
+            
+            points.shape=(-1,3)
+            lines.shape=(-1)
 
-        wells=one_step['wells']
-        n_wells=len(wells)
-        
-        points=np.empty( (n_wells, 2, 3), dtype=self.cell_centers.dtype)
-        lines=np.empty( (n_wells, 3), dtype='int64')
-        
-        i_well=0
-        for well in wells:
-            head_pos=well['wellhead_pos_ijk']-1
-            well_type=well['well_type'] #1-producer; 2-oil injection; 3-water injection; 4-gass injection
-            well_status=well['well_status'] # >0 open; <=0 shut
-            name=well['name']
-            #connections=well['completions']
-            '''
-            for conect in connections:
-                pos=conect['coordinates'] # ijk cell 
-                status=conect['status'] # connection status >0 open, <=0 shut
-            '''
-            # need cell centers for all cells
-            #print self.cell_centers.shape
-            #print head_pos 
-            head=self.cell_centers[head_pos[2]-1, head_pos[1]-1, head_pos[0],0:3]
+            group_block=vtk.vtkPolyData()
             
-            #print i_well
-            #print head
-            points[i_well,0,0:3]=head
+            vtk_points=vtk.vtkPoints()
+            vtk_points.SetData(numpy_support.numpy_to_vtk(points, deep=True))
+            group_block.SetPoints(vtk_points)
             
-            head_shift=head-np.array([0,0,100])
-            points[i_well,1,0:3]=head_shift
-            lines[i_well,0]=2
-            lines[i_well,1]=2*i_well
-            lines[i_well,2]=2*i_well+1
-            i_well+=1
-        
-        points.shape=(-1,3)
-        lines.shape=(-1)
-        
-        vtk_points=vtk.vtkPoints()
-        vtk_points.SetData(numpy_support.numpy_to_vtk(points, deep=True))
-        out.SetPoints(vtk_points)
-        
-        point_cells=vtk.vtkCellArray()   
-        point_cells.SetCells(n_wells, numpy_support.numpy_to_vtkIdTypeArray(lines, deep=True))
-        out.SetLines(point_cells)
+            point_cells=vtk.vtkCellArray()   
+            point_cells.SetCells(n_wells, numpy_support.numpy_to_vtkIdTypeArray(lines, deep=True))
+            group_block.SetLines(point_cells)
+            
+            self.add_dataset_to_multiblock(out, group_block, group['name'])
 
         return out   
 
@@ -927,9 +991,10 @@ class EclipseIO :
                     # mark correct timestep 
                     self.output.GetInformation().Set(self.output.DATA_TIME_STEP(), timestep)
 
-                    # create wells block  
-                    self.output.SetBlock(1, self.make_wells(self.restart[i_time]) )
-                    self.output.GetMetaData(1).Set(self.output.NAME(), "eclipse wells");                    
+                    # create well groups  block  
+                    self.add_dataset_to_multiblock(self.output, 
+                                                   self.make_wells(self.restart[i_time]),
+                                                   "eclipse well groups")
                     
 
                 # possibly reset camera to get correct view
@@ -960,7 +1025,7 @@ if (not hasattr(self,"info_done_event")):
 if hasattr(self, "code"):
     del self.code
 
-self.code=EclipseIO()   
+self.code=EclipseIO()
 self.code.SetFileName(FileName)
 self.code.RequestInformation(self)
 # indicator that RequestInformation is done
