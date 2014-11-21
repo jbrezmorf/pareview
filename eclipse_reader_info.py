@@ -76,6 +76,7 @@ class EclipseIO :
             persistent_object.Running=False
   
     VTK_HEXAHEDRON=12
+    VTK_POLY_DATA=0
 
     '''
     Set definitions of format headers with proper endian (default is big-endian).
@@ -858,7 +859,8 @@ class EclipseIO :
             
             points=np.empty( (n_wells, 2, 3), dtype=self.cell_centers.dtype)
             lines=np.empty( (n_wells, 3), dtype='int64')
-        
+            labels=vtk.vtkStringArray()
+            labels.SetName("label")
             for i_well in xrange(n_wells):                
                 well=wells[ group_well_ids[i_well] ]
                 head_pos=well['wellhead_pos_ijk']-1
@@ -879,12 +881,14 @@ class EclipseIO :
                 #print i_well
                 #print head
                 points[i_well,0,0:3]=head
+                labels.InsertNextValue("")
                 
                 head_shift=head-np.array([0,0,100])
                 points[i_well,1,0:3]=head_shift
                 lines[i_well,0]=2
                 lines[i_well,1]=2*i_well
                 lines[i_well,2]=2*i_well+1
+                labels.InsertNextValue(name)
                 i_well+=1
             
             points.shape=(-1,3)
@@ -900,6 +904,7 @@ class EclipseIO :
             point_cells.SetCells(n_wells, numpy_support.numpy_to_vtkIdTypeArray(lines, deep=True))
             group_block.SetLines(point_cells)
             
+            group_block.GetPointData().AddArray(labels)
             self.add_dataset_to_multiblock(out, group_block, group['name'])
 
         return out   
@@ -1002,6 +1007,20 @@ class EclipseIO :
                 # Finally it is done automaticaly but we may want other orientation of the system.
                 #print "reset camera"
                 #paraview.simple.ResetCamera()
+                group_block_ids=[]
+                
+                iterator = self.output.NewIterator()
+                iterator.InitTraversal()
+                while not iterator.IsDoneWithTraversal():
+                    obj_type=iterator.GetCurrentDataObject().GetDataObjectType()
+                    print obj_type, iterator.GetCurrentFlatIndex()
+                    if  obj_type== self.VTK_POLY_DATA:
+                        group_block_ids.append( iterator.GetCurrentFlatIndex() )
+                    iterator.GoToNextItem()
+                
+                print group_block_ids
+                #paraview.simple.BlockSelection()
+                
         except BaseException:
             print "== Eclipse Reader Exception =="
             (et, ex, tr)=sys.exc_info()
