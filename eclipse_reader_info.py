@@ -276,6 +276,7 @@ class EclipseIO :
     file.
     '''
     def SetFileName(self, file_name):
+        self.reader_name=file_name
         (base, ext)=os.path.splitext(file_name)
         egrid=base+".egrid"
         unrst=base+".unrst"
@@ -1007,19 +1008,38 @@ class EclipseIO :
                 # Finally it is done automaticaly but we may want other orientation of the system.
                 #print "reset camera"
                 #paraview.simple.ResetCamera()
-                group_block_ids=[]
                 
+                # Create BlockSelection (do not work)
+                group_block_ids=[]                
                 iterator = self.output.NewIterator()
                 iterator.InitTraversal()
                 while not iterator.IsDoneWithTraversal():
                     obj_type=iterator.GetCurrentDataObject().GetDataObjectType()
-                    print obj_type, iterator.GetCurrentFlatIndex()
                     if  obj_type== self.VTK_POLY_DATA:
                         group_block_ids.append( iterator.GetCurrentFlatIndex() )
                     iterator.GoToNextItem()
                 
                 print group_block_ids
-                #paraview.simple.BlockSelection()
+                self.group_block_ids=group_block_ids
+
+                #sel_source.FieldType="point"
+                
+                #help(self.programmable_filter)
+                #self.programmable_filter.SetSelectionInput(0, sel_source, 0)
+                
+                #paraview.simple.UpdatePipeline()
+                source=paraview.simple.FindSource(self.reader_name)
+                paraview.simple.SetActiveSource(source)
+                sel_source=paraview.simple.BlockSelectionSource()
+                sel_source.Blocks=group_block_ids
+                
+                rep=paraview.simple.Show()
+                rep.SelectionPointLabelVisibility = 1
+                rep.SelectionPointFieldDataArrayName = 'labels'
+                rep.SelectionPointLabelFormat = '%s'
+                #rep.SelectionPointSize = 0
+                #rep.SelectionPointLabelColor = [1,1,1]
+                print "done RequestData"
                 
         except BaseException:
             print "== Eclipse Reader Exception =="
@@ -1045,9 +1065,11 @@ if hasattr(self, "code"):
     del self.code
 
 self.code=EclipseIO()
+self.code.programmable_filter=self
 self.code.SetFileName(FileName)
 self.code.RequestInformation(self)
 # indicator that RequestInformation is done
 self.info_done_event.set()
+
 
  
