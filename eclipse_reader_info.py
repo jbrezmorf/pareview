@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from collections import namedtuple
 import traceback
 
+
 '''
 Simple timer.
 '''
@@ -63,14 +64,9 @@ class EclipseIO :
             persistent_object.Running=False
          
         try:
-            #print persistent_object, persistent_object.Running
-            if not persistent_object.Running:
-                #print "set true"
-                persistent_object.Running=True
-                yield
-            else:
-                pass
-                #print "skip"
+            running=persistent_object.Running
+            persistent_object.Running=True
+            yield not running
         finally:
             #print "set false"
             persistent_object.Running=False
@@ -83,6 +79,7 @@ class EclipseIO :
     Call with endian='<' for choosing little-endian.    
     '''
     def __init__(self, endian='>'):
+       
         '''
         dtype specification for every header is stored under 
         its keyword in the egrid_header record.
@@ -276,7 +273,6 @@ class EclipseIO :
     file.
     '''
     def SetFileName(self, file_name):
-        self.reader_name=file_name
         (base, ext)=os.path.splitext(file_name)
         egrid=base+".egrid"
         unrst=base+".unrst"
@@ -836,7 +832,9 @@ class EclipseIO :
     Create vtkPolyData representing the wells.
     Input - restart data for current time step.
     '''
-    def make_wells(self, one_step):        
+    def make_wells(self, one_step):   
+        n_total_points=0
+        
         wells=one_step['wells']        
         groups=one_step['group_data']
         n_groups=len(groups)
@@ -900,6 +898,7 @@ class EclipseIO :
             vtk_points=vtk.vtkPoints()
             vtk_points.SetData(numpy_support.numpy_to_vtk(points, deep=True))
             group_block.SetPoints(vtk_points)
+            n_total_points+=points.shape[0]
             
             point_cells=vtk.vtkCellArray()   
             point_cells.SetCells(n_wells, numpy_support.numpy_to_vtkIdTypeArray(lines, deep=True))
@@ -907,6 +906,7 @@ class EclipseIO :
             
             group_block.GetPointData().AddArray(labels)
             self.add_dataset_to_multiblock(out, group_block, group['name'])
+            self.n_wells_poly_data_points=n_total_points
 
         return out   
 
@@ -934,24 +934,31 @@ class EclipseIO :
     Setting information about the filter output.
     '''
     def RequestInformation(self, program_filter):
-        with self.running_guard(program_filter):
-            
-            self.read_restart_times()
-            self.np_times=np.array(self.times)
-            
-            executive=program_filter.GetExecutive()
-            #help(executive.__class__)
-            out_info=executive.GetOutputInformation(0)
-            #out_info=executive.GetOutputInformation().GetInformationObject(0)
-            out_info.Remove(executive.TIME_STEPS())
-            for time in self.times:
-                out_info.Append(executive.TIME_STEPS(), time)
-                #out_info.Append(vtkStreamingDemandDrivePipeline.TIME_STEPS(), time)
-            out_info.Remove(executive.TIME_RANGE())
-            out_info.Append(executive.TIME_RANGE(), self.times[0])
-            out_info.Append(executive.TIME_RANGE(), self.times[-1])
-            #print out_info
-            #print "Times:", times
+        try:
+            with self.running_guard(program_filter) as r:
+              if r:
+                self.read_restart_times()
+                self.np_times=np.array(self.times)
+                
+                executive=program_filter.GetExecutive()
+                #help(executive.__class__)
+                out_info=executive.GetOutputInformation(0)
+                #out_info=executive.GetOutputInformation().GetInformationObject(0)
+                out_info.Remove(executive.TIME_STEPS())
+                for time in self.times:
+                    out_info.Append(executive.TIME_STEPS(), time)
+                    #out_info.Append(vtkStreamingDemandDrivePipeline.TIME_STEPS(), time)
+                out_info.Remove(executive.TIME_RANGE())
+                out_info.Append(executive.TIME_RANGE(), self.times[0])
+                out_info.Append(executive.TIME_RANGE(), self.times[-1])
+                #print out_info
+                #print "Times:", times
+        except BaseException:
+            print "== Eclipse Reader Exception (RequestInfo) =="
+            (et, ex, tr)=sys.exc_info()
+            print "Exception: ", et, ex
+            traceback.print_tb(tr)
+                
             
     '''
     Get timestep to which we should set the data on the grid.
@@ -972,7 +979,8 @@ class EclipseIO :
     '''
     def RequestData(self, program_filter):
         try:
-            with self.running_guard(program_filter):
+            with self.running_guard(program_filter) as r:
+              if r:
                 if not hasattr(self, "grid"):
                     self.read_egrid() 
                 
@@ -1010,6 +1018,7 @@ class EclipseIO :
                 #paraview.simple.ResetCamera()
                 
                 # Create BlockSelection (do not work)
+                '''
                 group_block_ids=[]                
                 iterator = self.output.NewIterator()
                 iterator.InitTraversal()
@@ -1030,6 +1039,7 @@ class EclipseIO :
                 #paraview.simple.UpdatePipeline()
                 source=paraview.simple.FindSource(self.reader_name)
                 paraview.simple.SetActiveSource(source)
+                
                 sel_source=paraview.simple.BlockSelectionSource()
                 sel_source.Blocks=group_block_ids
                 
@@ -1040,6 +1050,64 @@ class EclipseIO :
                 #rep.SelectionPointSize = 0
                 #rep.SelectionPointLabelColor = [1,1,1]
                 print "done RequestData"
+                '''
+                #Merge to vtkPolyData
+                              
+                '''
+                #print "find source:", self.reader_name
+                #paraview.simple.UpdatePipeline()
+                source=paraview.simple.FindSource(self.reader_name)
+                print source
+                
+                #print "set active"
+                
+
+                #print "make merged"
+                merged=paraview.simple.ProgrammableFilter()
+                merged.Script=self.merge_groups_script
+                merged.OutputDataSetType=0 # PolyData
+                merged.Input=source
+                
+                
+                print "make selection"                
+                #n_points=merged.GetDataInformation().DataInformation.GetNumberOfPoints()
+                n_points=self.n_wells_poly_data_points
+                selection=paraview.simple.IDSelectionSource()
+                IDs = []
+                for i in range(n_points):
+                    IDs.append(0L)
+                    IDs.append(long(i))
+                selection.IDs = IDs
+                selection.FieldType=1
+                merged.SetSelectionInput(0,selection,0)
+
+                
+
+                print "Show"  
+                paraview.simple.SetActiveSource(merged)
+                print paraview.simple.Show()
+                reps=paraview.simple.GetRepresentations()
+                for (rep_name, rep_id) in reps:
+                    print (rep_name, rep_id)
+                    if rep_name=='GeometryRepresentation2':
+                        key=(rep_name, rep_id)
+                rep=reps[key]
+                print rep
+                
+                
+                print "setup selection"  
+                rep.SelectionPointFieldDataArrayName
+                rep.SelectionPointFieldDataArrayName = 'label'
+                rep.SelectionPointLabelColor = [0,0,0]
+                rep.SelectionPointLabelFormat = "%s"
+                rep.SelectionPointLabelVisibility = 1
+                #rep.SelectionPointSize = 0
+                #
+
+                #print "run ResetCamera"
+                #paraview.simple.ResetCamera()
+                print "done"
+                '''
                 
         except BaseException:
             print "== Eclipse Reader Exception =="
