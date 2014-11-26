@@ -1,0 +1,59 @@
+Paraview Eclipse reader
+
+V rámci pilotního projektu byl vytvořen prototyp pluginu pro software ParaView (ve verzi 4.2) pro 
+čtení souboru sítě (EGRID) a souboru výstupních data (UNRST) simulačního software Eclipse.
+Software ParaView 4.2 lze stáhnout na adrase: "http://www.paraview.org/download/"
+
+Plugin tvoří soubor "eclipse_reader.xml". Je implementován v jazyce Python a proto platformě nezávislý.
+Zahrnuje čtecí funkce pro soubory EGRID a UNRST i tvorbu sítě a datových polí v knihovně VTK.
+Je nutno upozornit, že struktura testovacích souborů EGRID a UNRST neodpovídala plně poskytnuté dokumentaci
+a nelze proto zaručit funkčnost pro obecné EGRID a UNRST soubory. Zejména nejsou podporovány sítě s lokalním 
+zjemněním a sítě zahrnující více rezervoárů. 
+
+Pro zobrazení popisků vrtů je třeba provést změny v nastavení vizualizace dat. Toto nelze implementovat jako 
+plugin (v jazyce Python), ale je to realizováno samostatným makrem, které je třeba po načtení dat samostatně 
+spustit. Pro pohodlnější vizualizaci dat s popisky a také pro drobné zrychlení by bylo nutno implementovat 
+plugin v jazyce C++, kde je možné rozsáhlé přizpůsobení grafického rozhraní a zobrazovacích metod. 
+
+
+Instalace
+
+1) Zkopírujte soubor "eclipse_reader.xml" do podadresáře "lib/paraview-4.2/plugins" vaší instalace ParaView.
+2) Spusťte ParaView.
+3) V menu zvolte:  Tools -> Manage Plugins ... 
+   V seznamu pluginů byste měli vidět plugin "eclipse_reader".
+   
+   Pokud tomu tak není, proveďte následující:
+   Zvolte "Load New...".
+   Zvolte typ souborů "XML" v poli "Files of type:".
+   Vyberte zkopírovaný soubor "eclipse_reader.xml".
+   Rozbalte položku "eclipse_reader" v seznamu pluginů a zaškrtněte "Auto Load".
+4) Použijte  Macros -> Add new macro ... pro výběr souboru "show_wells.py".
+   Tento krok jednak zaregistuje nové makro a zároveň zkopíruje soubor do adresáře vaší instalace ParaView.
+
+Použití
+
+Pro načtení souborů použijte: File -> Open ... a vyberte buď "*.EGRID" nebo "*.UNRST" soubor.
+Vždy jsou načteny oba soubory pokud existují, UNRST vyžaduje existenci EGRID.
+
+Vyčkejte na načtení knihoven jazyka Python. Použijte zelené tlačítko "Apply" pro vlastní načtení dat.
+
+Pro zobrazení poisků s vrty použijte: "Macro -> show_wells". Tím spustíte makro, které v "pipeline" vytvoří 
+dva filtry pro zobrazení popisků. Tyto filtry mohou být kdykoliv smazány bez vlivu na vlastní data.
+
+
+Nastavení decimace
+
+Pro rychlou odezvu používá ParaView decimaci zobrazovaných dat. Přednastavený limit na velikost dat pro použití 
+decimace je poměrně nízký a lze ho zvětšit v záložce Edit -> Settings... -> "Render View".
+Použijte první posuvník pojmenovaný "Interactive Rendering Options", velikost dat je uvedena v megabajtech.
+
+Převýšení data
+
+Pro použití převýšení máte dvě možnosti:
+1) Použít filter "Transform": Filters -> Aplhabetical -> Transform, a nastavit Z komponentu parametru "Scale".
+   Takto vytvoříte kopii data s přeškálovanými Z souřadnicemi.
+   
+2) V panelu "Properties" a záložce "Properties" klikněte na ikonu s ozubeným kolečkem pro zobrazení 
+   pokročilých nastavení. Odrolujte níže na sekci "Transforming" a nastave Z komponentu parametru "Scale".
+   Takto pouze přeškálujete zobrazení dat, ale Z souřadnice zůstanou stejné.
