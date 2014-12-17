@@ -9,7 +9,11 @@ from contextlib import contextmanager
 from collections import namedtuple
 import traceback
 
-
+'''
+Type of numpy arrays passed to VTK through numpy_support.
+'''
+vtk_int=np.int64
+vtk_double=np.float64
 '''
 Simple timer.
 '''
@@ -409,8 +413,9 @@ class EclipseIO :
             in_array=self.array
             if (in_array is None or len(in_array) is 0):
                 return None
-            assert( np.can_cast(type(in_array[0]), spec[0]) 
-                   or spec[0] == bool)  
+            array_type=spec[0]  
+            assert( np.can_cast(type(in_array[0]), array_type) 
+                   or array_type == bool)  
             i_in_array=0
             
             result_dict={}
@@ -440,7 +445,7 @@ class EclipseIO :
                         new_value=in_array[i_in_array:i_in_array+vector_size]
                         i_in_array+=vector_size                
                 # print "Item: ", key, i_in_array, new_value
-                result_dict[key]=new_value    
+                result_dict[key]=array_type(new_value)
                 
             return result_dict        
 
@@ -591,7 +596,7 @@ class EclipseIO :
         output.corners.shape=(8*n_cells, 3)                  
         
         # create cell to corner map
-        output.cells=np.empty((n_cells,9), dtype=int)
+        output.cells=np.empty((n_cells,9), dtype=vtk_int)
         output.cells[:,0]=8
         output.cells[:,1:9]=np.arange(8*n_cells).reshape((-1,8))               
         output.cells.shape=(-1)        
@@ -819,7 +824,7 @@ class EclipseIO :
         in_dtype=np_array.dtype
         if issubclass(in_dtype.type, np.number):
             if issubclass(in_dtype.type, np.integer):
-                fixed_np_array=np_array.astype(np.dtype('i'))
+                fixed_np_array=np_array.astype(np.dtype(vtk_int))
                 new_array=numpy_support.numpy_to_vtkIdTypeArray(fixed_np_array, deep=True)
             else:
                 new_array=numpy_support.numpy_to_vtk(np_array.astype(np.dtype('d')), deep=True)
@@ -857,7 +862,7 @@ class EclipseIO :
                 continue
             
             points=np.empty( (n_wells, 2, 3), dtype=self.cell_centers.dtype)
-            lines=np.empty( (n_wells, 3), dtype='int64')
+            lines=np.empty( (n_wells, 3), dtype=vtk_int)
             labels=vtk.vtkStringArray()
             labels.SetName("label")
             for i_well in xrange(n_wells):                
