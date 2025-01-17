@@ -4,18 +4,18 @@ Paraview Eclipse reader
 Python Paraview plugin implementing reader for results produced by Eclipse simulator.
 
 Files:
-  README.md - readme and basic documentation
-  eclipse_reader.xml - encapsuled plugin file
-  show_wells.py - macro to show labels of wells
+  - README.md - readme and basic documentation
+  - eclipse_reader.xml - encapsuled plugin file
+  - show_wells.py - macro to show labels of wells
   
-  eclipse_reader_template.xml - XML template without the script body
-  eclipse_reader_data.py - script implementing RequestData, just call particular method in Eclipse class
-  eclipse_reader_info.py - RequestInformation script, Eclipse class
-  make_plugin_xml.py - script that creates final XML of the plugin (adding script into the template)
-  makefile
-  test.egrid - test mesh
-  test.unrst - test data
-  test_eclipse_reader.py - unit tests
+  - eclipse_reader_template.xml - XML template without the script body
+  - eclipse_reader_data.py - script implementing RequestData, just call particular method in Eclipse class
+  - eclipse_reader_info.py - RequestInformation script, Eclipse class
+  - make_plugin_xml.py - script that creates final XML of the plugin (adding script into the template)
+  - makefile
+  - test.egrid - test mesh
+  - test.unrst - test data
+  - test_eclipse_reader.py - unit tests
 
 Installation
 ============
